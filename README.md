@@ -39,11 +39,20 @@ The transform (`Sources/AIRBackend`) does exactly this:
 5. emit AIR's entry-point + argument metadata contract (`!air.kernel`, per-arg
    `air.buffer` / `air.thread_position_in_grid` nodes).
 
-Right now the binding contract is **inferred** from the signature: pointer
-parameters become `device` buffers (slots 0,1,2… in order; access from
-`readonly`/`writeonly`), and a lone trailing scalar becomes
-`[[thread_position_in_grid]]`. See docs at
+The binding contract comes from **real compiler attributes**. The swift-gpu
+fork understands `@Compute`, `@Binding(to:)`, and the thread/grid builtins
+(`@ThreadPositionInGrid`, …); its IRGen records them into a `!swiftgpu.kernels`
+named-metadata node, one entry per kernel with each parameter's role, buffer
+slot, type, and name. `smc` reads that metadata (`SwiftGPUKernelMetadata`) — it
+never re-parses the Swift source. See the AIR docs at
 `~/Developer/metal-air-documentation/docs/08-emitting-air-a-backend-guide.md`.
+
+### Fork changes required
+
+This needs the GPU-capable `swiftc`. The patches to the swift-gpu fork (each
+`.smc-bak`-backed) add the attributes and the metadata emission — see
+`docs/fork-changes.md` for the exact file list. `smc` finds the fork `swiftc`
+via `$SWIFT_GPU_SWIFTC` or `--swiftc` (default: the local `swift-gpu-fork` build).
 
 ## Architecture
 
@@ -82,12 +91,12 @@ user-facing library standalone (not in-tree) until then avoids coupling to the
 
 - [x] End-to-end: Swift kernel → AIR → GPU execution (the `add` slice)
 - [x] `smc` driver + IR→AIR transform + inference + unit tests
-- [x] Recover real argument names/types from the Swift signature (`SwiftSignature`)
 - [x] Vector types (`SIMD4<Float>` → `float4`) via generic wrapper-type flattening
-- [x] Multiple builtins, disambiguated by per-parameter markers (`indices` example)
-- [ ] **Next:** `@Compute`/`@Binding`/`@ThreadPositionInGrid` as real attributes in
-      the fork, so `SwiftSignature.swift` (source parsing) can be retired
-- [ ] Native address-space codegen in IRGen (retire the post-processing pass)
+- [x] Multiple builtins in one kernel (`indices` example)
+- [x] **`@Compute`/`@Binding(to:)`/`@ThreadPositionInGrid` as real compiler
+      attributes** in the swift-gpu fork; IRGen emits `!swiftgpu.kernels`
+      metadata that `smc` reads directly — source parsing (`SwiftSignature`) retired
+- [ ] **Next:** native address-space codegen in IRGen (retire the post-processing pass)
 - [ ] More builtins & scalar/vector types; multiple kernels per module
 - [ ] `constant` / `threadgroup` address spaces; atomics; textures
 - [ ] AIR intrinsics (SIMD-group ops, simdgroup matrices, MetalPerformancePrimitives)

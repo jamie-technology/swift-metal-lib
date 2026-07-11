@@ -117,11 +117,15 @@ if opts.emitIR {
     print("smc: wrote \(sibling("ll"))")
 }
 
-// 2. IR → AIR. Recover names/types/bindings from the Swift source signature.
-let sourceText = (try? String(contentsOfFile: opts.source, encoding: .utf8)) ?? ""
+// 2. IR → AIR. The binding contract comes from the compiler: @Compute /
+// @Binding / @ThreadPositionInGrid are recorded into !swiftgpu.kernels metadata.
 let parsedInterface: KernelInterface?
 do {
-    parsedInterface = try SwiftSignature.parse(source: sourceText, kernel: kernelName)
+    guard let fromMetadata = try SwiftGPUKernelMetadata.parse(ir: ir, kernel: kernelName) else {
+        die("no !swiftgpu.kernels metadata for '\(kernelName)'. Is it marked @Compute? " +
+            "(Requires the GPU-capable swiftc.)")
+    }
+    parsedInterface = fromMetadata
 } catch {
     die("\(error)")
 }

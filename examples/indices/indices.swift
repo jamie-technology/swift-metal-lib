@@ -1,15 +1,14 @@
-// examples/indices/indices.swift — multi-builtin compute kernel.
-//
-// Two hardware builtins in one signature — inference can't tell them apart, so
-// the intent is stated with per-parameter markers (the stand-ins for the future
-// @ThreadPositionInGrid / @ThreadPositionInThreadgroup attributes). Writes each
-// thread's global and threadgroup-local index so the host can verify both.
+// examples/indices/indices.swift — multi-builtin compute kernel, written with
+// GPU attributes. Two distinct thread builtins in one signature, disambiguated
+// by @ThreadPositionInGrid vs @ThreadPositionInThreadgroup. The host verifies
+// each thread's global and threadgroup-local index.
 
+@Compute
 @_silgen_name("indices")
-public func indices(_ gridPos: UnsafeMutablePointer<UInt32>,   // @binding(0)
-                    _ localPos: UnsafeMutablePointer<UInt32>,   // @binding(1)
-                    _ gid: UInt32,                              // @threadPositionInGrid
-                    _ lid: UInt32) {                            // @threadPositionInThreadgroup
+public func indices(@Binding(to: 0) _ gridPos: UnsafeMutablePointer<UInt32>,
+                    @Binding(to: 1) _ localPos: UnsafeMutablePointer<UInt32>,
+                    @ThreadPositionInGrid _ gid: UInt32,
+                    @ThreadPositionInThreadgroup _ lid: UInt32) {
     gridPos[Int(gid)] = gid
     localPos[Int(gid)] = lid
 }
