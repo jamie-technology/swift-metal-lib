@@ -1,0 +1,6 @@
+.build/
+.swiftpm/
+*.metallib
+*.air
+*.air.ll
+examples/**/*.ll
