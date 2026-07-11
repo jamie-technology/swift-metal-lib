@@ -82,10 +82,15 @@ user-facing library standalone (not in-tree) until then avoids coupling to the
 
 - [x] End-to-end: Swift kernel → AIR → GPU execution (the `add` slice)
 - [x] `smc` driver + IR→AIR transform + inference + unit tests
-- [ ] Recover real argument names/types (parse the Swift signature / `-g` DWARF)
+- [x] Recover real argument names/types from the Swift signature (`SwiftSignature`)
+- [x] Vector types (`SIMD4<Float>` → `float4`) via generic wrapper-type flattening
+- [x] Multiple builtins, disambiguated by per-parameter markers (`indices` example)
+- [ ] **Next:** `@Compute`/`@Binding`/`@ThreadPositionInGrid` as real attributes in
+      the fork, so `SwiftSignature.swift` (source parsing) can be retired
+- [ ] Native address-space codegen in IRGen (retire the post-processing pass)
 - [ ] More builtins & scalar/vector types; multiple kernels per module
 - [ ] `constant` / `threadgroup` address spaces; atomics; textures
-- [ ] `@Compute` / `@Binding` / `@ThreadPositionInGrid` as real attributes (fork)
+- [ ] AIR intrinsics (SIMD-group ops, simdgroup matrices, MetalPerformancePrimitives)
 - [ ] Graphics stages (`@Vertex`/`@Fragment`), then a CUDA/NVPTX backend
 
 ## Layout

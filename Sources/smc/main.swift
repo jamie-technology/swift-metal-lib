@@ -117,8 +117,20 @@ if opts.emitIR {
     print("smc: wrote \(sibling("ll"))")
 }
 
-// 2. IR → AIR
-let (air, iface) = try! IRToAIR.generate(ir: ir, kernelName: kernelName)
+// 2. IR → AIR. Recover names/types/bindings from the Swift source signature.
+let sourceText = (try? String(contentsOfFile: opts.source, encoding: .utf8)) ?? ""
+let parsedInterface: KernelInterface?
+do {
+    parsedInterface = try SwiftSignature.parse(source: sourceText, kernel: kernelName)
+} catch {
+    die("\(error)")
+}
+let air: String, iface: KernelInterface
+do {
+    (air, iface) = try IRToAIR.generate(ir: ir, kernelName: kernelName, interface: parsedInterface)
+} catch {
+    die("\(error)")
+}
 let airPath = opts.keepIntermediates || opts.emitAIR ? sibling("air.ll")
     : FileManager.default.temporaryDirectory.appendingPathComponent("\(stem)-\(kernelName).air.ll").path
 try! air.write(toFile: airPath, atomically: true, encoding: .utf8)
@@ -143,7 +155,7 @@ for (i, arg) in iface.arguments.enumerated() {
     switch arg {
     case let .buffer(index, space, access, element, name):
         print("       arg[\(i)] \(name): \(space) \(access) \(element.airName)* @ buffer(\(index))")
-    case let .builtin(b, name):
-        print("       arg[\(i)] \(name): \(b.rawValue)")
+    case let .builtin(b, typeName, name):
+        print("       arg[\(i)] \(name): \(typeName) \(b.rawValue)")
     }
 }

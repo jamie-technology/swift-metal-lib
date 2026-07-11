@@ -76,7 +76,7 @@ final class IRToAIRTests: XCTestCase {
             return XCTFail("arg2 should be a buffer")
         }
         XCTAssertEqual(access2, .readWrite)
-        guard case .builtin(.threadPositionInGrid, _) = iface.arguments[3] else {
+        guard case .builtin(.threadPositionInGrid, _, _) = iface.arguments[3] else {
             return XCTFail("arg3 should be thread_position_in_grid")
         }
     }

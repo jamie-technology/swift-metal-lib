@@ -32,25 +32,40 @@ public struct DataType: Sendable, Equatable {
     public init(airName: String, size: Int, align: Int) {
         self.airName = airName; self.size = size; self.align = align
     }
-    public static let float = DataType(airName: "float", size: 4, align: 4)
-    public static let uint  = DataType(airName: "uint",  size: 4, align: 4)
-    public static let int   = DataType(airName: "int",   size: 4, align: 4)
+    public static let float  = DataType(airName: "float",  size: 4,  align: 4)
+    public static let float2 = DataType(airName: "float2", size: 8,  align: 8)
+    public static let float3 = DataType(airName: "float3", size: 16, align: 16)
+    public static let float4 = DataType(airName: "float4", size: 16, align: 16)
+    public static let uint   = DataType(airName: "uint",   size: 4,  align: 4)
+    public static let int    = DataType(airName: "int",    size: 4,  align: 4)
+    public static let half   = DataType(airName: "half",   size: 2,  align: 2)
 }
 
 /// A hardware-provided input, delivered as a trailing scalar parameter in AIR.
-public enum Builtin: String, Sendable, Equatable {
+/// Raw values are the exact `air.*` metadata keys (verified against the
+/// reference harness 03_thread_index_attributes).
+public enum Builtin: String, Sendable, Equatable, CaseIterable {
     case threadPositionInGrid          = "air.thread_position_in_grid"
     case threadPositionInThreadgroup   = "air.thread_position_in_threadgroup"
     case threadgroupPositionInGrid     = "air.threadgroup_position_in_grid"
     case threadIndexInThreadgroup      = "air.thread_index_in_threadgroup"
+    case threadsPerThreadgroup         = "air.threads_per_threadgroup"
     case threadgroupsPerGrid           = "air.threadgroups_per_grid"
 
-    /// AIR reflects the scalar type name of a builtin (e.g. `uint`, `uint3`).
-    public var argTypeName: String {
-        switch self {
-        case .threadIndexInThreadgroup: return "uint"
-        default: return "uint"        // grid/threadgroup positions are uint for 1-D dispatch
-        }
+    /// The source-level marker/attribute spelling (e.g. `threadPositionInGrid`,
+    /// matching the intended `@ThreadPositionInGrid` attribute).
+    public var markerName: String {
+        let n = String(rawValue.dropFirst("air.".count))       // thread_position_in_grid
+        let parts = n.split(separator: "_")
+        return parts.enumerated().map { i, p in
+            i == 0 ? String(p) : p.prefix(1).uppercased() + p.dropFirst()
+        }.joined()                                             // threadPositionInGrid
+    }
+
+    /// Resolve a source marker (e.g. `threadPositionInGrid`) to its builtin.
+    public init?(marker: String) {
+        guard let b = Builtin.allCases.first(where: { $0.markerName == marker }) else { return nil }
+        self = b
     }
 }
 
@@ -58,13 +73,14 @@ public enum Builtin: String, Sendable, Equatable {
 public enum Argument: Sendable, Equatable {
     /// A pointer argument bound to a resource slot.
     case buffer(index: Int, space: AddressSpace, access: Access, element: DataType, name: String)
-    /// A hardware-provided scalar input.
-    case builtin(Builtin, name: String)
+    /// A hardware-provided scalar input. `typeName` is the AIR-reflected source
+    /// type (e.g. `uint`, `uint3`).
+    case builtin(Builtin, typeName: String, name: String)
 
     public var name: String {
         switch self {
         case let .buffer(_, _, _, _, name): return name
-        case let .builtin(_, name): return name
+        case let .builtin(_, _, name): return name
         }
     }
 }

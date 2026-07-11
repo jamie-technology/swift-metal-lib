@@ -31,5 +31,9 @@ let package = Package(
         // by `smc`, not SwiftPM; only the host lives in a package target.
         .executableTarget(name: "add-example", dependencies: ["MetalSwift"],
                           path: "examples/add/Host"),
+        .executableTarget(name: "vscale-example", dependencies: ["MetalSwift"],
+                          path: "examples/vscale/Host"),
+        .executableTarget(name: "indices-example", dependencies: ["MetalSwift"],
+                          path: "examples/indices/Host"),
     ]
 )

@@ -13,72 +13,78 @@ struct AIRGenError: Error, CustomStringConvertible {
 /// valid AIR (see docs/08). This performs exactly those edits:
 ///   1. swap the target triple / datalayout for AIR's,
 ///   2. drop Swift-runtime globals & metadata (reflection, module flags),
-///   3. normalise Swift's wrapper struct types (`%TSf` -> `float`),
-///   4. strip `swiftcc` and rewrite buffer pointers into `addrspace(1)`,
+///   3. flatten Swift's single-field wrapper structs (`%TSf` -> `float`,
+///      `%Ts5SIMD4VySfG` -> `<4 x float>`) using the module's own typedefs,
+///   4. strip `swiftcc` and rewrite bound pointers into the right `addrspace`,
 ///      propagating the address space through derived pointers,
 ///   5. emit the AIR entry-point + argument metadata contract.
 ///
-/// Scope: a single, fully-inlined leaf kernel over `device` buffers plus one
-/// thread-position builtin — i.e. the shape the frontend currently lowers to.
-/// Textures, threadgroup memory, atomics, and helper calls are future work.
+/// The binding contract comes from a `KernelInterface` (parsed from the Swift
+/// source, or inferred from the signature when none is supplied).
 public enum IRToAIR {
-    /// Swift emits primitive values wrapped in single-field structs (`%TSf = type
-    /// <{ float }>`). GEPs over them are equivalent to GEPs over the scalar.
-    static let swiftScalarWrappers: [String: String] = [
-        "%TSf": "float", "%TSd": "double",
-        "%TSs": "i16", "%TSi": "i64", "%TSu": "i64",
-        "%Ts6UInt32V": "i32", "%Ts5Int32V": "i32",
-    ]
 
-    public static func generate(ir rawIR: String, kernelName: String, stage: Stage = .compute)
+    public static func generate(ir rawIR: String,
+                                kernelName: String,
+                                stage: Stage = .compute,
+                                interface providedInterface: KernelInterface? = nil)
         throws -> (air: String, interface: KernelInterface)
     {
-        // (3) Normalise Swift scalar-wrapper struct types away.
-        var ir = rawIR
-        for (wrapper, scalar) in swiftScalarWrappers {
-            ir = ir.replacingOccurrences(of: wrapper, with: scalar)
-        }
-
+        // (3) Flatten Swift scalar/vector wrapper structs to their payload type.
+        let ir = flattenWrapperTypes(rawIR)
         let lines = ir.components(separatedBy: "\n")
 
-        // Locate the kernel `define`.
-        guard let defineIdx = lines.firstIndex(where: { line in
-            line.hasPrefix("define ") && line.contains("@\(kernelName)(")
+        // Locate the kernel `define` and its body.
+        guard let defineIdx = lines.firstIndex(where: {
+            $0.hasPrefix("define ") && $0.contains("@\(kernelName)(")
         }) else {
             throw AIRGenError(message: "no `define` for kernel '\(kernelName)' in emitted IR")
         }
-
-        // Extract the function body (up to and including the closing `}`).
-        guard let endIdx = lines[defineIdx...].firstIndex(where: { $0 == "}" }) else {
+        guard let endIdx = lines[defineIdx...].firstIndex(of: "}") else {
             throw AIRGenError(message: "unterminated function body for '\(kernelName)'")
         }
-
-        let defineLine = lines[defineIdx]
+        let params = try parseParams(fromDefine: lines[defineIdx], kernel: kernelName)
         let bodyLines = Array(lines[(defineIdx + 1)..<endIdx])
 
-        // (4a) Parse the signature and infer the kernel interface.
-        let params = try parseParams(fromDefine: defineLine, kernel: kernelName)
-        let (interface, bufferSSANames) = inferInterface(name: kernelName, stage: stage, params: params)
+        // The binding contract: provided (from source) or inferred.
+        let interface: KernelInterface
+        if let p = providedInterface {
+            guard p.arguments.count == params.count else {
+                throw AIRGenError(message:
+                    "interface for '\(kernelName)' has \(p.arguments.count) args but IR has \(params.count)")
+            }
+            interface = p
+        } else {
+            interface = inferInterface(name: kernelName, stage: stage, params: params)
+        }
 
-        // (4b) Rewrite the signature: strip `swiftcc`/`local_unnamed_addr`, retype
-        //      buffer pointers, keep the builtin scalars.
-        let newParamText = params.map { p -> String in
-            if p.isPointer {
-                return "ptr addrspace(1) noundef \"air-buffer-no-alias\" \(p.ssa)"
-            } else {
+        // Map each buffer parameter's SSA value to its address space.
+        var rootSpace: [String: AddressSpace] = [:]
+        for (pos, arg) in interface.arguments.enumerated() {
+            if case let .buffer(_, space, _, _, name) = arg {
+                guard params[pos].isPointer else {
+                    throw AIRGenError(message: "'\(name)' is a buffer but IR parameter \(pos) is not a pointer")
+                }
+                rootSpace[params[pos].ssa] = space
+            }
+        }
+
+        // (4b) Rewrite the signature.
+        let newParamText = zip(params, interface.arguments).map { p, arg -> String in
+            switch arg {
+            case let .buffer(_, space, _, _, _):
+                return "ptr addrspace(\(space.rawValue)) noundef \"air-buffer-no-alias\" \(p.ssa)"
+            case .builtin:
                 return "\(p.typeTok) noundef \(p.ssa)"
             }
         }.joined(separator: ", ")
         let newDefine = "define void @\(kernelName)(\(newParamText)) #0 {"
 
-        // (4c) Rewrite the body: normalise GEP flags and thread the device
-        //      address space through every buffer-derived pointer.
-        let newBody = rewriteBody(bodyLines, deviceRoots: Set(bufferSSANames))
+        // (4c) Thread address spaces through the body.
+        let newBody = rewriteBody(bodyLines, roots: rootSpace)
 
-        // (5) Build the metadata contract.
+        // (5) Metadata contract.
         let (namedMD, nodes) = emitMetadata(for: interface)
 
-        // Reassemble a minimal module.
         var out = ""
         out += "; swift-metal generated AIR for kernel '\(kernelName)'\n"
         out += "source_filename = \"\(kernelName)\"\n"
@@ -94,6 +100,59 @@ public enum IRToAIR {
         return (out, interface)
     }
 
+    // MARK: - Wrapper-type flattening
+
+    /// Swift wraps scalars/vectors in single-field structs (`%TSf = type <{ float
+    /// }>`, `%Ts5SIMD4VySfG = type <{ %TSf12SIMD4StorageV }>`). Resolve every such
+    /// name to its underlying LLVM type and substitute it away, so GEPs read as
+    /// `getelementptr <4 x float>, …`. Multi-field structs are left untouched.
+    static func flattenWrapperTypes(_ ir: String) -> String {
+        var raw: [String: String] = [:]       // %Name -> inner type text
+        for line in ir.components(separatedBy: "\n") {
+            guard let eq = line.range(of: " = type "), line.hasPrefix("%") else { continue }
+            let name = String(line[..<eq.lowerBound]).trimmingCharacters(in: .whitespaces)
+            var body = String(line[eq.upperBound...]).trimmingCharacters(in: .whitespaces)
+            // Unwrap `<{ … }>` or `{ … }`.
+            if body.hasPrefix("<{") && body.hasSuffix("}>") {
+                body = String(body.dropFirst(2).dropLast(2))
+            } else if body.hasPrefix("{") && body.hasSuffix("}") {
+                body = String(body.dropFirst().dropLast())
+            } else { continue }
+            body = body.trimmingCharacters(in: .whitespaces)
+            // Only single-field wrappers (no top-level comma).
+            if hasTopLevelComma(body) { continue }
+            raw[name] = body
+        }
+        guard !raw.isEmpty else { return ir }
+
+        // Resolve transitively to a non-wrapper (primitive/vector) type.
+        func resolve(_ t: String, _ depth: Int = 0) -> String {
+            guard depth < 16, t.hasPrefix("%"), let inner = raw[t] else { return t }
+            return resolve(inner, depth + 1)
+        }
+        let resolved = Dictionary(uniqueKeysWithValues: raw.keys.map { ($0, resolve($0)) })
+
+        // Drop the typedef lines, then substitute names (longest first, at token
+        // boundaries so `%TSf` doesn't clobber `%TSf12SIMD4StorageV`).
+        var out = ir.components(separatedBy: "\n").filter { line in
+            !(line.hasPrefix("%") && line.contains(" = type "))
+        }.joined(separator: "\n")
+        for name in resolved.keys.sorted(by: { $0.count > $1.count }) {
+            out = boundaryReplace(out, name, resolved[name]!)
+        }
+        return out
+    }
+
+    static func hasTopLevelComma(_ s: String) -> Bool {
+        var depth = 0
+        for c in s {
+            if c == "<" || c == "{" || c == "(" || c == "[" { depth += 1 }
+            else if c == ">" || c == "}" || c == ")" || c == "]" { depth -= 1 }
+            else if c == "," && depth == 0 { return true }
+        }
+        return false
+    }
+
     // MARK: - Signature parsing
 
     struct ParsedParam { var typeTok: String; var attrs: String; var ssa: String; var isPointer: Bool }
@@ -102,10 +161,7 @@ public enum IRToAIR {
         guard let open = define.range(of: "@\(kernel)(")?.upperBound else {
             throw AIRGenError(message: "malformed define for '\(kernel)'")
         }
-        // Find the matching close paren from `open`, tracking nesting (attrs like
-        // `captures(none)` / `memory(argmem: readwrite)` contain parens).
-        var depth = 1
-        var idx = open
+        var depth = 1, idx = open
         while idx < define.endIndex, depth > 0 {
             let c = define[idx]
             if c == "(" { depth += 1 } else if c == ")" { depth -= 1; if depth == 0 { break } }
@@ -115,9 +171,7 @@ public enum IRToAIR {
         let paramStr = String(define[open..<idx])
         if paramStr.trimmingCharacters(in: .whitespaces).isEmpty { return [] }
 
-        // Depth-aware split on top-level commas.
-        var parts: [String] = []
-        var cur = ""
+        var parts: [String] = [], cur = ""
         depth = 0
         for c in paramStr {
             if c == "(" { depth += 1 } else if c == ")" { depth -= 1 }
@@ -135,105 +189,121 @@ public enum IRToAIR {
         }
     }
 
-    // MARK: - Inference
+    // MARK: - Inference (fallback when no source interface is supplied)
 
-    /// Infer a `KernelInterface` from the signature: pointer params become
-    /// `device` buffers (slot-indexed in order; access from readonly/writeonly),
-    /// and a lone trailing scalar becomes `thread_position_in_grid`.
-    static func inferInterface(name: String, stage: Stage, params: [ParsedParam])
-        -> (KernelInterface, [String])
-    {
+    static func inferInterface(name: String, stage: Stage, params: [ParsedParam]) -> KernelInterface {
         var args: [Argument] = []
-        var bufferSSA: [String] = []
         var bufIndex = 0
         let scalarCount = params.filter { !$0.isPointer }.count
-
         for (pos, p) in params.enumerated() {
             if p.isPointer {
-                let access: Access
-                if p.attrs.contains("readonly") { access = .read }
-                else if p.attrs.contains("writeonly") { access = .readWrite } // Metal binds writes as read_write
-                else { access = .readWrite }
+                let access: Access = p.attrs.contains("readonly") ? .read : .readWrite
                 args.append(.buffer(index: bufIndex, space: .device, access: access,
                                     element: .float, name: "arg\(pos)"))
-                bufferSSA.append(p.ssa)
                 bufIndex += 1
             } else {
-                // MVP: a single scalar input is the grid thread position.
                 let name = scalarCount == 1 ? "gid" : "arg\(pos)"
-                args.append(.builtin(.threadPositionInGrid, name: name))
+                args.append(.builtin(.threadPositionInGrid, typeName: "uint", name: name))
             }
         }
-        return (KernelInterface(name: name, stage: stage, arguments: args), bufferSSA)
+        return KernelInterface(name: name, stage: stage, arguments: args)
     }
 
-    // MARK: - Body rewriting
+    // MARK: - Body rewriting (address-space propagation)
 
-    /// Thread `addrspace(1)` through every pointer derived from a device buffer,
-    /// and normalise GEP flags metal-as's LLVM does not accept (`nuw`).
-    static func rewriteBody(_ body: [String], deviceRoots: Set<String>) -> [String] {
-        // Fixpoint: a value is a device pointer if it is a root, or a
-        // getelementptr/bitcast/phi/select of a device pointer.
-        var dev = deviceRoots
+    /// Thread each buffer's address space through every derived pointer, and
+    /// normalise GEP flags metal-as's LLVM does not accept (`nuw`).
+    static func rewriteBody(_ body: [String], roots: [String: AddressSpace]) -> [String] {
+        var space = roots
         var changed = true
         while changed {
             changed = false
             for line in body {
                 guard let eq = line.range(of: " = ") else { continue }
                 let dest = line[..<eq.lowerBound].trimmingCharacters(in: .whitespaces)
-                guard dest.hasPrefix("%"), !dev.contains(dest) else { continue }
-                let rhs = line[eq.upperBound...]
+                guard dest.hasPrefix("%"), space[dest] == nil else { continue }
+                let rhs = String(line[eq.upperBound...])
                 guard rhs.contains("getelementptr") || rhs.contains("bitcast")
                         || rhs.contains("phi ptr") || rhs.contains("select") else { continue }
-                // Any device-pointer operand referenced on the RHS taints dest.
-                if dev.contains(where: { referencesValue(String(rhs), $0) }) {
-                    dev.insert(dest); changed = true
+                if let s = space.first(where: { referencesValue(rhs, $0.key) })?.value {
+                    space[dest] = s; changed = true
                 }
             }
         }
-
         return body.map { line in
-            var l = line.replacingOccurrences(of: "getelementptr inbounds nuw ",
-                                              with: "getelementptr inbounds ")
+            var l = line.replacingOccurrences(of: "getelementptr inbounds nuw ", with: "getelementptr inbounds ")
             l = l.replacingOccurrences(of: "getelementptr nuw ", with: "getelementptr ")
-            // Annotate operand uses of device pointers with the address space.
-            for v in dev {
-                l = replaceOperand(in: l, value: v)
-            }
+            l = expandSplats(l)
+            for (v, s) in space { l = replaceOperand(in: l, value: v, space: s) }
             return l
         }
     }
 
-    /// Whether `text` references SSA value `value` as a whole token.
-    static func referencesValue(_ text: String, _ value: String) -> Bool {
-        guard let r = text.range(of: value) else { return false }
-        let after = r.upperBound
-        if after < text.endIndex {
-            let c = text[after]
-            if c.isLetter || c.isNumber || c == "_" { return false } // e.g. %1 vs %10
+    /// metal-as's LLVM predates the `splat (T V)` constant spelling. Rewrite it to
+    /// the classic elementwise vector constant `<T V, T V, …>`, taking the width
+    /// from the instruction's `<N x …>` result type.
+    static func expandSplats(_ line: String) -> String {
+        var l = line
+        while let s = l.range(of: "splat (") {
+            var depth = 1, idx = s.upperBound
+            while idx < l.endIndex, depth > 0 {
+                let c = l[idx]
+                if c == "(" { depth += 1 } else if c == ")" { depth -= 1; if depth == 0 { break } }
+                idx = l.index(after: idx)
+            }
+            guard depth == 0 else { break }
+            let inner = String(l[s.upperBound..<idx]).trimmingCharacters(in: .whitespaces)
+            let n = vectorWidth(String(l[..<s.lowerBound])) ?? 1
+            let expanded = "<" + Array(repeating: inner, count: n).joined(separator: ", ") + ">"
+            l.replaceSubrange(s.lowerBound...idx, with: expanded)
         }
-        return true
+        return l
     }
 
-    /// Rewrite `ptr <value>` operand uses to `ptr addrspace(1) <value>`.
-    static func replaceOperand(in line: String, value: String) -> String {
-        var result = ""
-        var rest = Substring(line)
-        let needle = "ptr \(value)"
-        while let r = rest.range(of: needle) {
-            // Guard the token boundary after the value (avoid %1 matching %10).
+    /// Extract N from the first `<N x …>` in `text`.
+    static func vectorWidth(_ text: String) -> Int? {
+        guard let lt = text.range(of: "<") else { return nil }
+        let after = text[lt.upperBound...]
+        let digits = after.prefix { $0.isNumber || $0 == " " }.trimmingCharacters(in: .whitespaces)
+        guard after.dropFirst(digits.count).trimmingCharacters(in: .whitespaces).hasPrefix("x") else { return nil }
+        return Int(digits)
+    }
+
+    static func referencesValue(_ text: String, _ value: String) -> Bool {
+        var rest = Substring(text)
+        while let r = rest.range(of: value) {
             let after = r.upperBound
-            let ok: Bool
-            if after < rest.endIndex {
-                let c = rest[after]
-                ok = !(c.isLetter || c.isNumber || c == "_")
-            } else { ok = true }
+            if after == rest.endIndex { return true }
+            let c = rest[after]
+            if !(c.isLetter || c.isNumber || c == "_") { return true }
+            rest = rest[after...]
+        }
+        return false
+    }
+
+    /// Rewrite `ptr <value>` operand uses to `ptr addrspace(n) <value>`.
+    static func replaceOperand(in line: String, value: String, space: AddressSpace) -> String {
+        let needle = "ptr \(value)"
+        var result = "", rest = Substring(line)
+        while let r = rest.range(of: needle) {
+            let after = r.upperBound
+            let ok = after == rest.endIndex || !(rest[after].isLetter || rest[after].isNumber || rest[after] == "_")
             result += rest[..<r.lowerBound]
-            if ok {
-                result += "ptr addrspace(1) \(value)"
-            } else {
-                result += needle
-            }
+            result += ok ? "ptr addrspace(\(space.rawValue)) \(value)" : needle
+            rest = rest[after...]
+        }
+        result += rest
+        return result
+    }
+
+    /// Boundary-aware substring replace for LLVM type/value names.
+    static func boundaryReplace(_ text: String, _ name: String, _ replacement: String) -> String {
+        var result = "", rest = Substring(text)
+        while let r = rest.range(of: name) {
+            let after = r.upperBound
+            let ok = after == rest.endIndex || !(rest[after].isLetter || rest[after].isNumber || rest[after] == "_")
+            result += rest[..<r.lowerBound]
+            result += ok ? replacement : name
             rest = rest[after...]
         }
         result += rest
@@ -250,20 +320,12 @@ public enum IRToAIR {
         }
     }
 
-    /// Emit the `!air.kernel` (or vertex/fragment) named metadata plus every node
-    /// it references, numbered from !9 (module flags occupy !0–!8).
     static func emitMetadata(for iface: KernelInterface) -> (namedMD: String, nodes: String) {
-        let kernelNode = 9
-        let attrsNode = 10
-        let argListNode = 11
-        let firstArgNode = 12
-
+        let kernelNode = 9, attrsNode = 10, argListNode = 11, firstArgNode = 12
         var nodeLines: [String] = []
         nodeLines.append("!\(kernelNode) = !{ptr @\(iface.name), !\(attrsNode), !\(argListNode)}")
         nodeLines.append("!\(attrsNode) = !{}")
-
-        let argNodeIDs = iface.arguments.indices.map { firstArgNode + $0 }
-        let argList = argNodeIDs.map { "!\($0)" }.joined(separator: ", ")
+        let argList = iface.arguments.indices.map { "!\(firstArgNode + $0)" }.joined(separator: ", ")
         nodeLines.append("!\(argListNode) = !{\(argList)}")
 
         for (pos, arg) in iface.arguments.enumerated() {
@@ -279,15 +341,13 @@ public enum IRToAIR {
                     "!\"air.arg_type_align_size\", i32 \(element.align), " +
                     "!\"air.arg_type_name\", !\"\(element.airName)\", " +
                     "!\"air.arg_name\", !\"\(name)\"}")
-            case let .builtin(builtin, name):
+            case let .builtin(builtin, typeName, name):
                 nodeLines.append(
                     "!\(id) = !{i32 \(pos), !\"\(builtin.rawValue)\", " +
-                    "!\"air.arg_type_name\", !\"\(builtin.argTypeName)\", " +
+                    "!\"air.arg_type_name\", !\"\(typeName)\", " +
                     "!\"air.arg_name\", !\"\(name)\"}")
             }
         }
-
-        let namedMD = "!\(iface.stage.rawValue) = !{!\(kernelNode)}"
-        return (namedMD, nodeLines.joined(separator: "\n"))
+        return ("!\(iface.stage.rawValue) = !{!\(kernelNode)}", nodeLines.joined(separator: "\n"))
     }
 }
