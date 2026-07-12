@@ -132,19 +132,31 @@ item — see below.
       *pointee*). IRGen emits `ptr addrspace(N)` natively (device=1/constant=2/
       threadgroup=3), value-transparent (drop-on-load) but pointer-distinct (no AS
       mixing). Works on params *and* local `var`s; GPU-verified (`examples/devadd`)
-- [x] **`swift-frontend -emit-air`** — the compiler emits loadable Apple AIR
-      directly: an in-IRGen normalization pass swaps the AIR triple/datalayout,
-      strips `swiftcc`/`nuw`/`captures(none)`/host fn-attrs, expands `splat`
-      constants to `shufflevector` (metal-as's LLVM ~17 can't parse them), and
-      converts `!swiftgpu.kernels` → `air.kernel`/`air.buffer`. Straight to
-      `metal-as`/`metallib` → GPU, **no `smc` transform**. (`examples/devadd`)
-- [ ] Remaining to fully retire `smc`: driver (`swiftc`) routing for `-emit-air`,
-      an `-emit-metallib` mode that invokes `metal-as`/`metallib`, and porting
-      the examples to `@Device` (the native path needs it for `addrspace(1)`)
-- [ ] Refinement: value-level look-through for SIMD operator overloads
-      (`device SIMD4<Float> * 2.0`); `@Device var` explicit local annotations
-- [ ] More builtins & scalar/vector types; multiple kernels per module
-- [ ] `constant` / `threadgroup` address spaces; atomics; textures
+- [x] **`swift-frontend -emit-air` / `-emit-metallib`** — the compiler owns the
+      whole pipeline. An in-IRGen normalization pass swaps the AIR
+      triple/datalayout, strips `swiftcc`/`nuw`/`captures(none)`/host fn-attrs +
+      the `"PIC Level"` flag + `!prof` metadata, expands `splat` constants to
+      `shufflevector`, and converts `!swiftgpu.kernels` → `air.kernel`/`air.buffer`.
+      `-emit-metallib` then invokes `metal-as`/`metallib` in-process → a loadable
+      library, **no `smc` transform**. All examples build this way.
+- [x] **Typed (non-opaque) pointers** — the printed AIR is rewritten to
+      `float addrspace(1)*` (and Swift wrapper structs flattened to their MSL
+      leaf: `%TSf`→`float`, SIMD→`<4 x float>`, `InlineArray`→`[N x T]`), which
+      the driver back-end requires. Reconstructed textually since the fork's LLVM
+      is opaque-only.
+- [x] **SIMD operator overloads on device values** (`device SIMD4<Float> * 2.0`)
+      — the address-space qualifier is transparent to associated-type resolution,
+      member substitution, and witness dispatch (`examples/dvscale`/`vscale`)
+- [x] **Constant global data** — a program-scope `let table: InlineArray<N,Float>`
+      is placed in the constant address space (`addrspace(2)`) and baked into the
+      metallib (`examples/constdata`)
+- [x] **Integer kernels** — Swift's overflow-checked `*`/`+` (with `llvm.trap`
+      branches) assemble after `!prof` (branch_weights) stripping (`examples/intmath`)
+- [x] Examples ported to `@Device` + the native pipeline (`add`/`vscale`/`indices`)
+- [ ] Fully retire `smc`: `swiftc` driver routing for `-emit-air`/`-emit-metallib`
+      (currently via `swift-frontend`; needs `swift-driver` support)
+- [ ] More builtins & scalar/vector types; more kernels per module
+- [ ] `threadgroup` shared storage (addrspace 3 allocation); atomics; textures
 - [ ] Enforce the GPU-safe subset with real diagnostics (reject heap allocation,
       ARC, concurrency, recursion, existentials, `throws` in kernel code)
 - [ ] AIR intrinsics (SIMD-group ops, simdgroup matrices, MetalPerformancePrimitives)
@@ -154,7 +166,8 @@ item — see below.
 
 - `Sources/` — `GPUSwift`, `AIRBackend`, `MetalSwift`, `smc` (see table above)
 - `Tests/AIRBackendTests` — transform unit tests (no GPU/swiftc needed)
-- `examples/add` — the reference elementwise-add kernel + host + `build.sh`
+- `examples/` — each has a kernel + host + `build.sh` (native `-emit-metallib`):
+  `add`, `vscale`, `indices`, `devadd`, `dvscale`, `constdata`, `intmath`
 
 ## Kernel design (target attribute surface)
 
