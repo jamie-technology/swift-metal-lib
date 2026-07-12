@@ -59,6 +59,22 @@ resolved against the unqualified object type at three points (see
 | `lib/AST/TypeSubstitution.cpp` | `getContextSubstitutions`: strip the qualifier from the member's base type (else SILGen asserts *"Bad base type"*) |
 | `include/swift/SIL/SILCloner.h` | `visitWitnessMethodInst`: un-qualify the cloned `witness_method` lookup type so it matches its concrete conformance during inlining |
 
+Constant global data — a program-scope `let table: InlineArray<N,Float> = [...]`
+placed in the constant address space (see `docs/address-spaces.md`):
+
+| File | Change |
+| --- | --- |
+| `lib/IRGen/GenDecl.{h,cpp}` | `createVariable` gained an `addressSpace` param; `getAddrOfSILGlobalVariable` emits a static-initialized global into addrspace 2 in GPU mode and preserves that space through the constant bitcast |
+| `lib/IRGen/IRGenSIL.cpp` | `visitGlobalAddrInst` preserves the global's address space instead of casting to the default `ptr addrspace(0)` |
+| `lib/IRGen/IRGen.cpp` | normalize pass strips the `"PIC Level"` module flag (crashes the driver on addrspace-2 globals) |
+
+Typed (non-opaque) pointers — the printed AIR is rewritten to typed pointers,
+which the driver back-end requires:
+
+| File | Change |
+| --- | --- |
+| `lib/FrontendTool/FrontendTool.cpp` | `rewriteAIRToTypedPointers` (textual): flatten Swift wrapper structs to MSL leaves + reconstruct typed pointers from `load`/`store`/`gep` element types; applied in place after `performLLVM`, before `metal-as` |
+
 Adding a decl attribute is exhaustive-visitor-heavy: `TypeCheckAttr.cpp`,
 `TypeCheckDeclOverride.cpp`, and `ASTDumper.cpp` each delete the default
 `visitDeclAttribute`, so every new attr needs an entry in all three.

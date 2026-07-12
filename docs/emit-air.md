@@ -37,9 +37,38 @@ into the LLVM pipeline **after all `-O` passes, before the module is printed**
    read_write, `device`/`constant`/`threadgroup` → address space, and the
    pointee → AIR element type/size), and emits the module-level `air.*` facts
    (`air.max_*`, `air.version`, `air.language_version`).
+8. Strips the **`"PIC Level"`** module flag — meaningless for a shader, and it
+   crashes the driver back-end on constant-address-space globals (see
+   `docs/address-spaces.md`).
 
 Address spaces are **not** rewritten here — IRGen already emits them natively
 (see `docs/address-spaces.md`). That's why the pass is small.
+
+## Typed (non-opaque) pointers
+
+The fork's LLVM is **opaque-pointer only** (its `PointerType` stores just an
+address space), so IRGen and the module pass can only produce `ptr addrspace(N)`.
+But the Metal driver's back-end compiler expects real MSL-shaped AIR: **typed**
+pointers (`float addrspace(1)*`) whose pointee matches the access type, and clean
+element types. Opaque pointers happen to work for plain device-buffer kernels,
+but typed pointers are required for e.g. simdgroup-matrix intrinsics.
+
+Because typed pointers cannot exist in the in-memory module, the reconstruction
+runs on the **printed textual AIR** (`rewriteAIRToTypedPointers` in
+`lib/FrontendTool/FrontendTool.cpp`), applied in place after `performLLVM` and
+before `metal-as`, for both `-emit-air` and `-emit-metallib`. It:
+
+- **Flattens** Swift single-field wrapper structs to their MSL leaf: `%TSf`
+  (`<{ float }>`) → `float`, the SIMD storage struct → `<4 x float>`,
+  `InlineArray` → `[N x T]` (recursively; the constant initializer too).
+- **Reconstructs pointee types** from the element types on `load`/`store`/`gep`,
+  then rewrites function signatures, `getelementptr` (array-global accesses take
+  the 2-index `[N x T]` form), `load`, `store`, and the `air.kernel` metadata
+  function pointer to typed form.
+
+Unmatched constructs are left unchanged (opaque), which `metal-as` still accepts;
+extend the pass as new kernel shapes (calls with pointer args, `alloca`, casts)
+appear.
 
 ## `-emit-metallib`: one command, no `smc`
 
