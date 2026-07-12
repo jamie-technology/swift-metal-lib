@@ -108,6 +108,45 @@ public final class ComputeContext {
         if let e = cb.error { throw GPUError(message: "GPU execution failed: \(e)") }
     }
 
+    /// Make an `rgba32Float` 2-D texture, optionally initialised from `pixels`
+    /// (row-major, 4 floats/pixel). `usage` controls read/write access.
+    public func texture(width: Int, height: Int,
+                        pixels: [Float]? = nil,
+                        usage: MTLTextureUsage = [.shaderRead, .shaderWrite]) -> MTLTexture {
+        let desc = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba32Float, width: width, height: height, mipmapped: false)
+        desc.usage = usage
+        let tex = device.makeTexture(descriptor: desc)!
+        if let pixels {
+            pixels.withUnsafeBytes { raw in
+                tex.replace(region: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0,
+                            withBytes: raw.baseAddress!, bytesPerRow: width * 4 * MemoryLayout<Float>.stride)
+            }
+        }
+        return tex
+    }
+
+    /// Dispatch a kernel that takes `[[texture(i)]]` arguments over a 2-D grid.
+    public func dispatchTextures(_ function: String,
+                                 textures: [MTLTexture],
+                                 width: Int, height: Int,
+                                 threadsPerGroup: (Int, Int) = (8, 8)) throws {
+        let pso = try pipeline(function)
+        guard let cb = queue.makeCommandBuffer(),
+              let enc = cb.makeComputeCommandEncoder() else {
+            throw GPUError(message: "could not encode command buffer")
+        }
+        enc.setComputePipelineState(pso)
+        for (i, t) in textures.enumerated() { enc.setTexture(t, index: i) }
+        enc.dispatchThreads(MTLSize(width: width, height: height, depth: 1),
+                            threadsPerThreadgroup: MTLSize(width: threadsPerGroup.0,
+                                                           height: threadsPerGroup.1, depth: 1))
+        enc.endEncoding()
+        cb.commit()
+        cb.waitUntilCompleted()
+        if let e = cb.error { throw GPUError(message: "GPU execution failed: \(e)") }
+    }
+
     /// Make a device buffer initialised from `array`.
     public func buffer<T>(_ array: [T]) -> MTLBuffer {
         var a = array
@@ -125,6 +164,18 @@ public extension MTLBuffer {
     func array<T>(_ type: T.Type, count: Int) -> [T] {
         let p = contents().bindMemory(to: T.self, capacity: count)
         return Array(UnsafeBufferPointer(start: p, count: count))
+    }
+}
+
+public extension MTLTexture {
+    /// Read an `rgba32Float` texture back as row-major `[Float]` (4 per pixel).
+    func floats() -> [Float] {
+        var out = [Float](repeating: 0, count: width * height * 4)
+        out.withUnsafeMutableBytes { raw in
+            getBytes(raw.baseAddress!, bytesPerRow: width * 4 * MemoryLayout<Float>.stride,
+                     from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
+        }
+        return out
     }
 }
 #endif

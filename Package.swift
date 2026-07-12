@@ -49,5 +49,7 @@ let package = Package(
                           path: "examples/grid2d/Host"),
         .executableTarget(name: "reduce-example", dependencies: ["MetalSwift"],
                           path: "examples/reduce/Host"),
+        .executableTarget(name: "texture-example", dependencies: ["MetalSwift"],
+                          path: "examples/texture/Host"),
     ]
 )

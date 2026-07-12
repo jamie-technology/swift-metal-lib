@@ -170,7 +170,13 @@ item — see below.
       host API; GPU-verified per-threadgroup reduction (`examples/reduce`). The
       GPU pipeline disables host auto-vectorization (its `<N x T>` /
       `llvm.vector.reduce.*` output can't be lowered by the AIR back-end).
-- [ ] `atomics` and `textures` — as packages (textures first)
+- [~] **Textures** (first package) — host support done & GPU-verified
+      (`ComputeContext.texture`/`dispatchTextures`, `examples/texture` inverts an
+      image). Feasibility proven: the driver accepts opaque `ptr addrspace(1)`
+      textures via `air.texture` metadata (no named struct needed). Remaining:
+      compiler texture type + `@Texture` attribute + read/write intrinsics — see
+      `docs/textures.md`. (Kernel currently hand-authored in AIR.)
+- [ ] `atomics` — as a package (after textures)
 - [ ] Enforce the GPU-safe subset with real diagnostics (reject heap allocation,
       ARC, concurrency, recursion, existentials, `throws` in kernel code)
 - [ ] AIR intrinsics (SIMD-group ops, simdgroup matrices, MetalPerformancePrimitives)
