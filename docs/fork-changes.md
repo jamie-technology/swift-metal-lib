@@ -48,6 +48,17 @@ Three GPU attributes plus one IRGen metadata pass.
 | `lib/ASTGen/Sources/ASTGen/DeclAttrs.swift` | simple attrs in the case list; `Binding` stubbed (C++ parser handles it; ASTGen isn't the default frontend parser) |
 | `lib/IRGen/IRGenModule.{h,cpp}` | `emitSwiftGPUKernelMetadata()` + call in `finalize()` |
 
+Value-generic operators on address-space-qualified values (e.g. `device
+SIMD4<Float> * 2.0`) — the qualifier is transparent to the generics machinery,
+resolved against the unqualified object type at three points (see
+`docs/address-spaces.md`):
+
+| File | Change |
+| --- | --- |
+| `lib/Sema/ConstraintSystem.cpp` | `simplifyType` dependent-member case: `device SIMD4<Float>.Scalar` → `Float` (lets the operator type-check) |
+| `lib/AST/TypeSubstitution.cpp` | `getContextSubstitutions`: strip the qualifier from the member's base type (else SILGen asserts *"Bad base type"*) |
+| `include/swift/SIL/SILCloner.h` | `visitWitnessMethodInst`: un-qualify the cloned `witness_method` lookup type so it matches its concrete conformance during inlining |
+
 Adding a decl attribute is exhaustive-visitor-heavy: `TypeCheckAttr.cpp`,
 `TypeCheckDeclOverride.cpp`, and `ASTDumper.cpp` each delete the default
 `visitDeclAttribute`, so every new attr needs an entry in all three.

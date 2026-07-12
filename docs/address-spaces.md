@@ -59,6 +59,26 @@ pointer identity):
 - **Conformance** delegates to the underlying type (`device Float` is `Escapable`
   iff `Float` is) — `ConformanceLookup.cpp`.
 
+Value-generic operators on qualified values (e.g. `device SIMD4<Float> * 2.0`,
+where the SIMD operator is a protocol-extension method dispatched with
+`Self = device SIMD4<Float>`): the qualifier describes *storage*, not the value,
+so it is transparent to the generics machinery at three more points, each
+resolving against the unqualified object type:
+- **Associated-type resolution** — `device SIMD4<Float>.Scalar` is `Float`
+  (`ConstraintSystem.cpp`, `simplifyType`'s dependent-member case). This is what
+  lets the operator type-check.
+- **Member substitution** — a member whose `Self`/base substitutes to a qualified
+  value is substituted against the unqualified type (`TypeSubstitution.cpp`,
+  `getContextSubstitutions`). Without this SILGen asserts *"Bad base type."*
+- **Witness-method lookup during inlining** — when a protocol-extension method is
+  inlined with a qualified `Self`, the cloned `witness_method`'s lookup type is
+  un-qualified to match its concrete conformance (`SILCloner.h`,
+  `visitWitnessMethodInst`).
+
+Scalar arithmetic (`device Float + device Float`) needs none of these: `Float`'s
+operators are concrete, so there is no generic `Self` to dispatch. Only the
+generic protocol path (SIMD/vector) exercises the points above.
+
 Codegen:
 - **Drop-on-load**: `getLoweredRValueType` lowers a standalone `AddressSpace(N,T)`
   to `T`, *except* on a raw pointer, where the address space IS the
