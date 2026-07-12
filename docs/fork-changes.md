@@ -58,6 +58,8 @@ resolved against the unqualified object type at three points (see
 | `lib/Sema/ConstraintSystem.cpp` | `simplifyType` dependent-member case: `device SIMD4<Float>.Scalar` → `Float` (lets the operator type-check) |
 | `lib/AST/TypeSubstitution.cpp` | `getContextSubstitutions`: strip the qualifier from the member's base type (else SILGen asserts *"Bad base type"*) |
 | `include/swift/SIL/SILCloner.h` | `visitWitnessMethodInst`: un-qualify the cloned `witness_method` lookup type so it matches its concrete conformance during inlining |
+| `lib/SILGen/SILGenApply.cpp` | un-qualify a `witness_method`'s lookup type at creation, so a protocol operator on a device value (`FixedWidthInteger.&*` with `Self = device UInt32`) matches its concrete conformance |
+| `lib/AST/ASTVerifier.cpp` | `equalIgnoringAddressSpace`: the ApplyExpr-result and assignment-operand consistency checks treat `device T` and `T` as equal (they lower identically) — lets device-loaded scalars flow through generic operators and store into device locations |
 
 Constant global data — a program-scope `let table: InlineArray<N,Float> = [...]`
 placed in the constant address space (see `docs/address-spaces.md`):

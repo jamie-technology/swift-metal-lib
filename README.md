@@ -159,8 +159,10 @@ item — see below.
       `SIMD2`/`SIMD3`/`SIMD4` as buffer element types (flattened to MSL leaves)
 - [x] **Thread builtins** — 6 position/count builtins, plus vector builtins for
       2-D/3-D dispatch (`uint2`/`uint3` `thread_position_in_grid`, `examples/grid2d`)
-- [ ] Device *scalar* values in non-uniform generic expressions (drop-on-load);
-      see `docs/address-spaces.md`
+- [x] **Device values in non-uniform expressions** — a device-loaded scalar mixes
+      with non-device values in generic operators/initializers, and computed
+      values store into device locations (the qualifier is storage-only and drops
+      on load) — `examples/grid2d`
 - [ ] Fully retire `smc`: `swiftc` driver routing for `-emit-air`/`-emit-metallib`
       (currently via `swift-frontend`; needs `swift-driver` support)
 - [ ] `threadgroup` shared storage (addrspace 3 allocation); atomics; textures

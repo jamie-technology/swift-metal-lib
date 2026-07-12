@@ -110,21 +110,32 @@ global lives there. See `examples/constdata`.
   global. (Device-only kernels tolerate it — they have no global data — which is
   why this only surfaced with constant globals.)
 
+## Device values in non-uniform expressions
+
+A value loaded from a device pointer is typed `device T`, and it mixes freely
+with non-device values: `let w = dims[0]; gid.y &* w`, `Int(dims[i])`,
+`out[i] = UInt32(x)` (storing a computed non-device value into a device
+location), `a[i] * Float(n)`, etc. (`examples/grid2d`). The qualifier describes
+*storage*, not the value, and drops at SIL lowering — `device T` and `T` are the
+same value type — so this is handled by treating them as equal in two places
+rather than by eliminating `device T` from the AST (which the shared-`Pointee`
+model can't do cleanly — the subscript's `Pointee` type variable is the pointer's
+storage element *and* the loaded value at once):
+
+- **AST verifier** (`ASTVerifier.cpp`, `equalIgnoringAddressSpace`) — the
+  ApplyExpr-result and assignment-operand consistency checks accept a `device T`
+  where `T` is expected (and vice-versa). AddressSpaceType only occurs in GPU
+  code, so ordinary programs are unaffected.
+- **Witness dispatch** (`SILGenApply.cpp`) — a protocol operator/requirement
+  applied to a device value (e.g. `FixedWidthInteger.&*` with `Self = device
+  UInt32`) has its `witness_method` lookup type un-qualified to match the
+  concrete conformance.
+
+IRGen then lowers the device value to a plain register value (loading from the
+`addrspace(N)` address the pointer supplies), so the result is correct.
+
 ## Known refinements (not yet done)
 
-- **Device *scalar* values in non-uniform expressions.** A value loaded from a
-  device pointer is typed `device T`. When the whole expression is device-uniform
-  (`out[i] = a[i] + b[i]`, or SIMD arithmetic on a loaded vector) it works. But
-  mixing a device scalar with a non-device value in a *generic* operator/
-  initializer — `Int(dims[i])`, `gid.y &* width` where `width = dims[0]` — or
-  storing a *computed non-device* value into a device location — `out[i] =
-  UInt32(x)` — trips the AST verifier (`result of ApplyExpr does not match … device
-  T vs T`). The clean fix is drop-on-load *during solving* (a pointee read yields
-  the unqualified value), which the current pointee-qualification model can't do
-  cleanly (the subscript's `Pointee` type variable is shared between the pointer's
-  storage, which needs the qualifier, and the loaded value, which drops it).
-  Workaround: keep the stored value device-uniform (`examples/grid2d` transposes
-  device floats and computes indices in plain `Int`).
 - Local `@Device var` bindings inside a body: the Sema wrap is currently applied
   to parameters (`DeclKind::Param`); extend to `DeclKind::Var`.
 - `@Threadgroup var shared: …` as an *allocation* in addrspace(3) (storage-AS, vs
