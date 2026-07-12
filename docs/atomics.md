@@ -20,17 +20,27 @@ public func histogram(@Binding(to: 0) @Device _ data: UnsafePointer<UInt32>,
 
 ## Design
 
-Unlike textures, atomics need **no special type**: MSL's `atomic_uint` is just a
-device `i32`, and `air.atomic.global.add.u.i32` takes a plain `i32 addrspace(1)*`.
-So the atomic buffer is an ordinary `@Device UnsafeMutablePointer<UInt32>`, and
-the package provides free functions:
+Unlike textures, atomics need **no special type**: MSL's `atomic_uint`/
+`atomic_int`/`atomic_float` are just device `i32`/`i32`/`f32`, and e.g.
+`air.atomic.global.add.u.i32` takes a plain `i32 addrspace(1)*`. So the atomic
+buffer is an ordinary `@Device UnsafeMutablePointer<T>`, and the package provides
+free functions (all with relaxed-device ordering — `memory_order relaxed = 0`,
+`scope device = 2`, `volatile = true`):
 
 ```swift
-atomicFetchAdd/Sub/Max/Min/Or/And/Xor(_ p: UnsafeMutablePointer<UInt32>, _ v: UInt32) -> UInt32
+// UInt32 (.u.i32) and Int32 (.s.i32):
+atomicFetchAdd/Sub/Max/Min/Or/And/Xor(_ p: UnsafeMutablePointer<UInt32|Int32>, _ v) -> old
+// Float (.add.f32):
+atomicFetchAdd(_ p: UnsafeMutablePointer<Float>, _ v: Float) -> Float
+// UInt32:
+atomicLoad(_ p) -> UInt32 ; atomicStore(_ p, _ v) ; atomicExchange(_ p, _ v) -> old
+atomicCompareExchange(_ p, _ expected: inout UInt32, _ desired) -> Bool   // weak
 ```
 
-each wrapping the intrinsic with the relaxed-device ordering operands
-(`memory_order relaxed = 0`, `scope device = 2`, `volatile = true`).
+`atomicCompareExchange` maps to `air.atomic.global.cmpxchg.weak.i32`, which
+returns the *old* value (success = old == expected) and updates `expected` for a
+retry loop. `examples/atomics` verifies min/max/float-sum plus a CAS-loop counter
+that lands at exactly the thread count under full contention.
 
 ## Compiler support (fork)
 
@@ -46,8 +56,15 @@ machinery (`@Device` pointers → `ptr addrspace(1)`, `air.*` calls marked
 - The normalize pass also strips the newer `nneg` (zext) / `disjoint` (or) flags
   that the index math emits and metal-as (~LLVM 17) can't parse.
 
+## Gotcha
+
+Compare-exchange needs an addressable local (the expected-value slot), and Swift
+adds `sspreq` (stack-protector-required) to any function with one. Stack
+protection is meaningless on the GPU and **crashes the driver back-end** — the
+normalize pass strips `ssp*` attributes. (Single-pointer atomics have no local,
+so they never hit it — which is why cmpxchg was the only op that crashed.)
+
 ## Not yet
 
-- Only `UInt32` (`.u.i32`). `Int32` (`.s.i32`), `atomic_float` add, `exchange`,
-  `compare_exchange`, threadgroup-scoped atomics (`air.atomic.local.*`), and a
-  typed `Atomic<T>` wrapper.
+- Threadgroup-scoped atomics (`air.atomic.local.*`), `Int32`/`Float`
+  exchange/cmpxchg (only `UInt32` so far), and a typed `Atomic<T>` wrapper.
