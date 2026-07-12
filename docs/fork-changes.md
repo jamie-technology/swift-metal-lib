@@ -69,6 +69,19 @@ Threadgroup shared memory (`examples/reduce`) — all in `lib/IRGen/IRGen.cpp`:
 | `convergent` intrinsics | `air.*` intrinsic declarations (e.g. `air.wg.barrier`, declared via `@_silgen_name`) and their call sites are marked `convergent` (+ clean attributes) — required for barriers |
 | No auto-vectorization | the GPU pipeline sets `PTO.{Loop,SLP}Vectorization = false`: the host vectorizer's `<N x T>` loads and `llvm.vector.reduce.*` intrinsics crash the AIR back-end (source-level SIMD types are unaffected) |
 
+Textures (`examples/texture`, `packages/Textures`):
+
+| File | Change |
+| --- | --- |
+| `lib/IRGen/IRGenModule.cpp` | a param whose nominal type is `Texture2D`/`WriteTexture2D` gets a `textureRead`/`textureWrite` role in `!swiftgpu.kernels` |
+| `lib/IRGen/IRGen.cpp` | normalize pass emits `air.texture` (read/write) in the `[[texture(N)]]` namespace; strips Swift runtime metadata (`$s…`/`__swift…`/`swift_…` symbols — kept if a GPU data global in addrspace 1/2/3) |
+| `lib/Frontend/CompilerInvocation.cpp` | GPU path disables reflection metadata (`ReflectionMetadataMode::None`) — user types (Texture2D) otherwise emit `__swift5_*` records metal-as can't parse |
+| `lib/FrontendTool/FrontendTool.cpp` | the typed-pointer rewrite is gated on a constant-address-space global — texture/device kernels stay fully opaque (which the driver accepts; typing is all-or-nothing) |
+
+The texture type itself needs no dedicated IRGen: `Texture2D<T>` wraps one
+`@Device` pointer field, so it flattens to `ptr addrspace(1)` through the
+existing address-space path.
+
 Constant global data — a program-scope `let table: InlineArray<N,Float> = [...]`
 placed in the constant address space (see `docs/address-spaces.md`):
 

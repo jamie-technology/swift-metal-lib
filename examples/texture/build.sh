@@ -1,13 +1,16 @@
 #!/bin/bash
-# Textures — the first *package*. Host support (ComputeContext.texture /
-# dispatchTextures) is native and GPU-verified. The Swift-authored texture
-# kernel needs compiler texture-type support (see docs/textures.md); until then
-# the `invert` kernel is hand-authored in AIR (opaque `ptr addrspace(1)`
-# textures, which the driver accepts via air.texture metadata) and assembled
-# with metal-as/metallib — proving the whole pipeline + host path end-to-end.
+# Build the Swift-authored texture `invert` kernel to a metallib. The Textures
+# package (packages/Textures/Textures.swift) provides the texture types; the
+# compiler lowers them to air.texture arguments (see docs/textures.md).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-xcrun metal-as examples/texture/invert.air.ll -o /tmp/invert.air
-xcrun metallib  /tmp/invert.air -o examples/texture/texture.metallib
+
+SWIFT_FRONTEND="${SWIFT_GPU_SWIFTC:-$HOME/Developer/swift-gpu-fork/build/Ninja-RelWithDebInfoAssert+swift-DebugAssert/swift-macosx-arm64/bin/swiftc}"
+SWIFT_FRONTEND="${SWIFT_FRONTEND%swiftc}swift-frontend"
+
+"$SWIFT_FRONTEND" -emit-metallib -O -parse-as-library -module-name texture \
+    packages/Textures/Textures.swift examples/texture/invert.swift \
+    -o examples/texture/texture.metallib
+
 swift build >/dev/null
 .build/debug/texture-example examples/texture/texture.metallib
