@@ -41,5 +41,7 @@ let package = Package(
                           path: "examples/dvscale/Host"),
         .executableTarget(name: "constdata-example", dependencies: ["MetalSwift"],
                           path: "examples/constdata/Host"),
+        .executableTarget(name: "intmath-example", dependencies: ["MetalSwift"],
+                          path: "examples/intmath/Host"),
     ]
 )

@@ -40,6 +40,12 @@ into the LLVM pipeline **after all `-O` passes, before the module is printed**
 8. Strips the **`"PIC Level"`** module flag — meaningless for a shader, and it
    crashes the driver back-end on constant-address-space globals (see
    `docs/address-spaces.md`).
+9. Strips **`!prof` (branch_weights)** metadata off instructions — metal-as's
+   LLVM rejects the newer `!{!"branch_weights", !"expected", …}` form, and
+   profile weights are meaningless for a shader. This is what lets integer
+   kernels assemble: Swift's overflow-checked `*`/`+` emit
+   `llvm.*.with.overflow` plus a conditional branch to `llvm.trap`, and that
+   branch carries the offending metadata (`examples/intmath`).
 
 Address spaces are **not** rewritten here — IRGen already emits them natively
 (see `docs/address-spaces.md`). That's why the pass is small.
