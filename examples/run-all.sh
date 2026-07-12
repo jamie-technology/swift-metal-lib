@@ -14,4 +14,5 @@ run() { # <name> <kernel>
 run add    add
 run vscale vscale
 run indices indices
+run devadd devadd   # @Device address space, native ptr addrspace(1)
 echo "— all examples passed —"

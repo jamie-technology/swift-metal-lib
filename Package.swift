@@ -35,5 +35,7 @@ let package = Package(
                           path: "examples/vscale/Host"),
         .executableTarget(name: "indices-example", dependencies: ["MetalSwift"],
                           path: "examples/indices/Host"),
+        .executableTarget(name: "devadd-example", dependencies: ["MetalSwift"],
+                          path: "examples/devadd/Host"),
     ]
 )

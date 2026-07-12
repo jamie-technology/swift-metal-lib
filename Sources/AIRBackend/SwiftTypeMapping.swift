@@ -20,12 +20,22 @@ enum SwiftTypeMapping {
     enum PointerBase { case immutable, mutable }
 
     /// If `type` is a Swift pointer spelling, return its mutability + pointee.
+    /// The pointee may carry a GPU address-space qualifier (`device Float`);
+    /// strip it — the element type is what the AIR metadata reflects, and the
+    /// address space rides natively on the pointer type.
     static func pointer(_ type: String) -> (PointerBase, String)? {
         for (prefix, base) in [("UnsafeMutablePointer<", PointerBase.mutable),
                                ("UnsafePointer<", PointerBase.immutable)] {
             if type.hasPrefix(prefix), type.hasSuffix(">") {
-                let inner = String(type.dropFirst(prefix.count).dropLast())
-                return (base, inner.trimmingCharacters(in: .whitespaces))
+                var inner = String(type.dropFirst(prefix.count).dropLast())
+                    .trimmingCharacters(in: .whitespaces)
+                for qualifier in ["device ", "constant ", "threadgroup ", "thread "] {
+                    if inner.hasPrefix(qualifier) {
+                        inner = String(inner.dropFirst(qualifier.count))
+                            .trimmingCharacters(in: .whitespaces)
+                    }
+                }
+                return (base, inner)
             }
         }
         return nil

@@ -87,6 +87,37 @@ user-facing library standalone (not in-tree) until then avoids coupling to the
   tensor ops) that lower to `air.*` intrinsics — part of the future shader
   stdlib, built after the core codegen path solidifies. A lowering, not a wrapper.
 
+## Kernel language restrictions (the GPU-safe Swift subset)
+
+GPU kernels run on hardware with **no heap, no runtime, and no dynamic
+dispatch**, so a kernel is a restricted subset of Swift. The compiler must
+*reject* (with a clear diagnostic) any construct that would need facilities the
+GPU doesn't have — mirroring the features Metal Shading Language prohibits.
+Banned in kernel code:
+
+- **Dynamic memory allocation** — no `class` instances, no escaping closures, no
+  growable `Array`/`Set`/`Dictionary`, no `String`. Anything that would call the
+  allocator. (Fixed-size local values and `device`/`threadgroup` buffers only.)
+- **ARC / reference counting** — reference types imply heap + retain/release,
+  which don't exist on the GPU. Value types only.
+- **Concurrency** — `async`/`await`, `Task`, actors. These rely on the heap
+  (task allocation) and a runtime executor, so they're prohibited — same reason
+  MSL has no threads-within-a-thread. (GPU parallelism comes from the dispatch
+  grid, not `Task`.)
+- **Recursion** — MSL forbids recursive functions (no call stack for it); the
+  call graph must be statically finite. (Enables full inlining.)
+- **Existentials / dynamic dispatch / metatypes** — protocol-typed values,
+  `as?` to a class, witness tables, reflection. No runtime type metadata on GPU.
+- **Error handling** (`throws`/`try`) — uses existential errors + heap.
+- **The runtime & Foundation** — `print`, `Mirror`, `Codable`, Foundation, any
+  library call that isn't a pure, inlinable, heap-free computation.
+
+Allowed: value types (structs, tuples, enums without heap payloads), `SIMD`
+types, fixed arithmetic, control flow, `device`/`constant`/`threadgroup` pointer
+access, and the GPU builtins/intrinsics. Enforcing this subset with real
+diagnostics (rather than a confusing downstream failure) is itself a roadmap
+item — see below.
+
 ## Roadmap
 
 - [x] End-to-end: Swift kernel → AIR → GPU execution (the `add` slice)
@@ -96,9 +127,17 @@ user-facing library standalone (not in-tree) until then avoids coupling to the
 - [x] **`@Compute`/`@Binding(to:)`/`@ThreadPositionInGrid` as real compiler
       attributes** in the swift-gpu fork; IRGen emits `!swiftgpu.kernels`
       metadata that `smc` reads directly — source parsing (`SwiftSignature`) retired
-- [ ] **Next:** native address-space codegen in IRGen (retire the post-processing pass)
+- [x] **Native GPU address spaces** — `@Device`/`@Constant`/`@Threadgroup`/`@Thread`
+      as pointer-type qualifiers (Clang/MSL model: the address space qualifies the
+      *pointee*). IRGen emits `ptr addrspace(N)` natively (device=1/constant=2/
+      threadgroup=3), value-transparent (drop-on-load) but pointer-distinct (no AS
+      mixing). Works on params *and* local `var`s; GPU-verified (`examples/devadd`)
+- [ ] **Next:** wire this into `-emit-air`/`-emit-metallib` so `swiftc` owns the
+      whole pipeline, then delete `smc` (address-space rewrite is now a no-op)
 - [ ] More builtins & scalar/vector types; multiple kernels per module
 - [ ] `constant` / `threadgroup` address spaces; atomics; textures
+- [ ] Enforce the GPU-safe subset with real diagnostics (reject heap allocation,
+      ARC, concurrency, recursion, existentials, `throws` in kernel code)
 - [ ] AIR intrinsics (SIMD-group ops, simdgroup matrices, MetalPerformancePrimitives)
 - [ ] Graphics stages (`@Vertex`/`@Fragment`), then a CUDA/NVPTX backend
 
