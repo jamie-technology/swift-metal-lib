@@ -88,6 +88,28 @@ Codegen:
   lowers its `_rawValue` to `ptr addrspace(N)`; `pointer_to_address` preserves
   the address space (`GenType.cpp`, `GenStruct.cpp`, `IRGenSIL.cpp`).
 
+## Constant global data (program-scope constants)
+
+A program-scope constant with static initializer data — e.g. a lookup table
+`let gain: InlineArray<8, Float> = [...]` (`InlineArray` is a fixed-size *value*
+type, so no heap) — is placed in the MSL **constant** address space (AIR
+addrspace 2). This is the only legal address space for program-scope read-only
+data in MSL, and the driver only bakes the bytes into the metallib when the
+global lives there. See `examples/constdata`.
+
+- **Placement**: `getAddrOfSILGlobalVariable` emits a global with a static
+  initializer (`var->getStaticInitializerValue()`) into addrspace 2 when in GPU
+  mode; `createVariable` gained an `addressSpace` parameter (`GenDecl.cpp`). The
+  GEP/loads rooted at the global inherit the address space, so no reference
+  rewrite is needed. `global_addr` lowering and the constant bitcast preserve
+  the non-default address space instead of forcing `ptr addrspace(0)`
+  (`IRGenSIL.cpp`, `GenDecl.cpp`).
+- **`PIC Level`**: the normalization pass strips the `"PIC Level"` module flag
+  (`IRGen.cpp`). Position-independent code is meaningless for a shader, and it
+  makes the driver's back-end compiler **crash** on an addrspace-2 constant
+  global. (Device-only kernels tolerate it — they have no global data — which is
+  why this only surfaced with constant globals.)
+
 ## Known refinements (not yet done)
 
 - Local `@Device var` bindings inside a body: the Sema wrap is currently applied
