@@ -51,5 +51,7 @@ let package = Package(
                           path: "examples/reduce/Host"),
         .executableTarget(name: "texture-example", dependencies: ["MetalSwift"],
                           path: "examples/texture/Host"),
+        .executableTarget(name: "histogram-example", dependencies: ["MetalSwift"],
+                          path: "examples/histogram/Host"),
     ]
 )

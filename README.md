@@ -175,7 +175,10 @@ item — see below.
       compiler lowers to `air.texture` args (opaque `ptr addrspace(1)`, no named
       struct); `.read`/`.write` call the `air.*` intrinsics. Host +
       `examples/texture` (image invert), GPU-verified. See `docs/textures.md`.
-- [ ] `atomics` — as a package (after textures)
+- [x] **Atomics** (second package) — `atomicFetchAdd/Sub/Max/Min/Or/And/Xor` on
+      `@Device UInt32` memory over the `air.atomic.global.*` intrinsics (no
+      special type — MSL `atomic_uint` is just a device i32). `examples/histogram`
+      (1M threads → 16 bins), GPU-verified. See `docs/atomics.md`.
 - [ ] Enforce the GPU-safe subset with real diagnostics (reject heap allocation,
       ARC, concurrency, recursion, existentials, `throws` in kernel code)
 - [ ] AIR intrinsics (SIMD-group ops, simdgroup matrices, MetalPerformancePrimitives)

@@ -82,6 +82,16 @@ The texture type itself needs no dedicated IRGen: `Texture2D<T>` wraps one
 `@Device` pointer field, so it flattens to `ptr addrspace(1)` through the
 existing address-space path.
 
+Atomics (`examples/histogram`, `packages/Atomics`):
+
+| File | Change |
+| --- | --- |
+| `lib/IRGen/IRGenSIL.cpp` | `visitAddressToPointerInst` preserves the address space (device pointer arithmetic / `&buf[i]` for atomics — mirrors the `pointer_to_address` fix) |
+| `lib/IRGen/IRGen.cpp` | normalize pass strips newer `nneg` (zext) / `disjoint` (or) instruction flags metal-as can't parse |
+
+The atomic ops reuse everything else (`@Device` pointers, `air.*` convergent
+calls, opaque pointers) — no atomic type needed (`atomic_uint` is a device i32).
+
 Constant global data — a program-scope `let table: InlineArray<N,Float> = [...]`
 placed in the constant address space (see `docs/address-spaces.md`):
 
