@@ -165,7 +165,12 @@ item — see below.
       on load) — `examples/grid2d`
 - [ ] Fully retire `smc`: `swiftc` driver routing for `-emit-air`/`-emit-metallib`
       (currently via `swift-frontend`; needs `swift-driver` support)
-- [ ] `threadgroup` shared storage (addrspace 3 allocation); atomics; textures
+- [x] **Threadgroup shared memory** — `@Threadgroup` buffers (AIR addrspace 3,
+      host-allocated), the `air.wg.barrier` intrinsic, and a `dispatchThreadgroups`
+      host API; GPU-verified per-threadgroup reduction (`examples/reduce`). The
+      GPU pipeline disables host auto-vectorization (its `<N x T>` /
+      `llvm.vector.reduce.*` output can't be lowered by the AIR back-end).
+- [ ] `atomics` and `textures` — as packages (textures first)
 - [ ] Enforce the GPU-safe subset with real diagnostics (reject heap allocation,
       ARC, concurrency, recursion, existentials, `throws` in kernel code)
 - [ ] AIR intrinsics (SIMD-group ops, simdgroup matrices, MetalPerformancePrimitives)

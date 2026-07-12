@@ -138,7 +138,9 @@ IRGen then lowers the device value to a plain register value (loading from the
 
 - Local `@Device var` bindings inside a body: the Sema wrap is currently applied
   to parameters (`DeclKind::Param`); extend to `DeclKind::Var`.
-- `@Threadgroup var shared: …` as an *allocation* in addrspace(3) (storage-AS, vs
-  the pointee-AS handled here) — `createAlloca` address space.
+- `@Threadgroup var shared: …` as an in-kernel *allocation* (an addrspace-3
+  global with `undef` init, MSL's `threadgroup float shared[N]`). The
+  host-allocated `@Threadgroup` *buffer argument* form works today
+  (`examples/reduce`); the in-kernel allocation form is not done yet.
 - Mangling is a Stage-1 stub (address space invisible to the mangler); fine while
   kernels use `@_silgen_name`, needs real mangling for `.swiftinterface`.

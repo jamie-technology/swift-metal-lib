@@ -58,6 +58,34 @@ public final class ComputeContext {
         if let e = cb.error { throw GPUError(message: "GPU execution failed: \(e)") }
     }
 
+    /// Dispatch an explicit number of threadgroups, optionally allocating
+    /// threadgroup (shared) memory. `threadgroupMemory` maps a threadgroup
+    /// binding index to a byte length. Use this for reductions and other kernels
+    /// that use `@Threadgroup` shared storage + `threadgroupBarrier`.
+    public func dispatchThreadgroups(_ function: String,
+                                     buffers: [MTLBuffer],
+                                     threadgroupMemory: [Int: Int] = [:],
+                                     threadgroups: Int,
+                                     threadsPerThreadgroup: Int) throws {
+        let pso = try pipeline(function)
+        guard let cb = queue.makeCommandBuffer(),
+              let enc = cb.makeComputeCommandEncoder() else {
+            throw GPUError(message: "could not encode command buffer")
+        }
+        enc.setComputePipelineState(pso)
+        for (i, b) in buffers.enumerated() { enc.setBuffer(b, offset: 0, index: i) }
+        for (index, length) in threadgroupMemory {
+            enc.setThreadgroupMemoryLength(length, index: index)
+        }
+        enc.dispatchThreadgroups(MTLSize(width: threadgroups, height: 1, depth: 1),
+                                 threadsPerThreadgroup: MTLSize(width: threadsPerThreadgroup,
+                                                                height: 1, depth: 1))
+        enc.endEncoding()
+        cb.commit()
+        cb.waitUntilCompleted()
+        if let e = cb.error { throw GPUError(message: "GPU execution failed: \(e)") }
+    }
+
     /// Dispatch over a 2-D grid — for kernels taking a `SIMD2<UInt32>`
     /// `@ThreadPositionInGrid` (MSL `uint2`).
     public func dispatch2D(_ function: String,

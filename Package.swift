@@ -47,5 +47,7 @@ let package = Package(
                           path: "examples/multikernel/Host"),
         .executableTarget(name: "grid2d-example", dependencies: ["MetalSwift"],
                           path: "examples/grid2d/Host"),
+        .executableTarget(name: "reduce-example", dependencies: ["MetalSwift"],
+                          path: "examples/reduce/Host"),
     ]
 )
