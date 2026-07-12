@@ -171,14 +171,17 @@ item — see below.
       GPU pipeline disables host auto-vectorization (its `<N x T>` /
       `llvm.vector.reduce.*` output can't be lowered by the AIR back-end).
 - [x] **Textures** (first package) — Swift-authored texture kernels work
-      end-to-end. `Texture2D<Float>`/`WriteTexture2D<Float>` are package types the
-      compiler lowers to `air.texture` args (opaque `ptr addrspace(1)`, no named
-      struct); `.read`/`.write` call the `air.*` intrinsics. Host +
-      `examples/texture` (image invert), GPU-verified. See `docs/textures.md`.
-- [x] **Atomics** (second package) — `atomicFetchAdd/Sub/Max/Min/Or/And/Xor` on
-      `@Device UInt32` memory over the `air.atomic.global.*` intrinsics (no
-      special type — MSL `atomic_uint` is just a device i32). `examples/histogram`
-      (1M threads → 16 bins), GPU-verified. See `docs/atomics.md`.
+      end-to-end. `Texture2D`/`WriteTexture2D`/`ReadWriteTexture2D<Float>` are
+      package types the compiler lowers to `air.texture` args (opaque
+      `ptr addrspace(1)`, no named struct); `.read`/`.write` call the `air.*`
+      intrinsics. `examples/texture` (invert) + `examples/rwtexture` (in-place
+      brighten), GPU-verified. 3-D types exist but dispatch is blocked on uint3.
+      See `docs/textures.md`.
+- [x] **Atomics** (second package) — fetch add/sub/max/min/and/or/xor on `UInt32`
+      *and* `Int32`, float atomic add, load/store, exchange, and compare-exchange,
+      over the `air.atomic.global.*` intrinsics (no special type — MSL atomics are
+      just device i32/f32). `examples/histogram` + `examples/atomics` (CAS-loop
+      counter), GPU-verified. See `docs/atomics.md`.
 - [ ] Enforce the GPU-safe subset with real diagnostics (reject heap allocation,
       ARC, concurrency, recursion, existentials, `throws` in kernel code)
 - [ ] AIR intrinsics (SIMD-group ops, simdgroup matrices, MetalPerformancePrimitives)
