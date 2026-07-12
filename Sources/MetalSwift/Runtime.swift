@@ -126,6 +126,24 @@ public final class ComputeContext {
         return tex
     }
 
+    /// Make an `rgba32Uint` 2-D texture (for `Texture2D<UInt32>` kernels),
+    /// optionally initialised from `pixels` (row-major, 4 uints/pixel).
+    public func textureUInt(width: Int, height: Int,
+                            pixels: [UInt32]? = nil,
+                            usage: MTLTextureUsage = [.shaderRead, .shaderWrite]) -> MTLTexture {
+        let desc = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba32Uint, width: width, height: height, mipmapped: false)
+        desc.usage = usage
+        let tex = device.makeTexture(descriptor: desc)!
+        if let pixels {
+            pixels.withUnsafeBytes { raw in
+                tex.replace(region: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0,
+                            withBytes: raw.baseAddress!, bytesPerRow: width * 4 * MemoryLayout<UInt32>.stride)
+            }
+        }
+        return tex
+    }
+
     /// Dispatch a kernel with buffer arguments over a 3-D grid (uint3 position).
     public func dispatchThreads3D(_ function: String, buffers: [MTLBuffer],
                                   width: Int, height: Int, depth: Int,
@@ -234,6 +252,16 @@ public extension MTLTexture {
         var out = [Float](repeating: 0, count: width * height * 4)
         out.withUnsafeMutableBytes { raw in
             getBytes(raw.baseAddress!, bytesPerRow: width * 4 * MemoryLayout<Float>.stride,
+                     from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
+        }
+        return out
+    }
+
+    /// Read an `rgba32Uint` texture back as row-major `[UInt32]` (4 per pixel).
+    func uints() -> [UInt32] {
+        var out = [UInt32](repeating: 0, count: width * height * 4)
+        out.withUnsafeMutableBytes { raw in
+            getBytes(raw.baseAddress!, bytesPerRow: width * 4 * MemoryLayout<UInt32>.stride,
                      from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
         }
         return out

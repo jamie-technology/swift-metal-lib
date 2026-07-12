@@ -63,12 +63,65 @@ public extension ReadWriteTexture2D where T == Float {
     }
 }
 
+// MARK: - Half / UInt / Int element formats (2-D)
+//
+// The element type selects the intrinsic (half -> .v4f16, uint -> .u.v4i32,
+// int -> .s.v4i32) and the metadata type name (texture2d<half|uint|int, …>).
+
+@_silgen_name("air.read_texture_2d.v4f16")
+func _airReadTex2Dh(_ t: Texture2D<Float16>, _ s: _Sampler, _ c: SIMD2<UInt32>,
+                    _ o: SIMD2<Int32>, _ lod: Int32, _ f: Int32) -> (SIMD4<Float16>, UInt8)
+@_silgen_name("air.write_texture_2d.v4f16")
+func _airWriteTex2Dh(_ t: WriteTexture2D<Float16>, _ c: SIMD2<UInt32>,
+                     _ color: SIMD4<Float16>, _ lod: Int32, _ f: Int32)
+@_silgen_name("air.read_texture_2d.u.v4i32")
+func _airReadTex2Du(_ t: Texture2D<UInt32>, _ s: _Sampler, _ c: SIMD2<UInt32>,
+                    _ o: SIMD2<Int32>, _ lod: Int32, _ f: Int32) -> (SIMD4<UInt32>, UInt8)
+@_silgen_name("air.write_texture_2d.u.v4i32")
+func _airWriteTex2Du(_ t: WriteTexture2D<UInt32>, _ c: SIMD2<UInt32>,
+                     _ color: SIMD4<UInt32>, _ lod: Int32, _ f: Int32)
+@_silgen_name("air.read_texture_2d.s.v4i32")
+func _airReadTex2Di(_ t: Texture2D<Int32>, _ s: _Sampler, _ c: SIMD2<UInt32>,
+                    _ o: SIMD2<Int32>, _ lod: Int32, _ f: Int32) -> (SIMD4<Int32>, UInt8)
+@_silgen_name("air.write_texture_2d.s.v4i32")
+func _airWriteTex2Di(_ t: WriteTexture2D<Int32>, _ c: SIMD2<UInt32>,
+                     _ color: SIMD4<Int32>, _ lod: Int32, _ f: Int32)
+
+public extension Texture2D where T == Float16 {
+    func read(_ coord: SIMD2<UInt32>) -> SIMD4<Float16> {
+        _airReadTex2Dh(self, _airGetReadSampler(), coord, SIMD2<Int32>(0, 0), 0, 1).0
+    }
+}
+public extension WriteTexture2D where T == Float16 {
+    func write(_ color: SIMD4<Float16>, to coord: SIMD2<UInt32>) {
+        _airWriteTex2Dh(self, coord, color, 0, 2)
+    }
+}
+public extension Texture2D where T == UInt32 {
+    func read(_ coord: SIMD2<UInt32>) -> SIMD4<UInt32> {
+        _airReadTex2Du(self, _airGetReadSampler(), coord, SIMD2<Int32>(0, 0), 0, 1).0
+    }
+}
+public extension WriteTexture2D where T == UInt32 {
+    func write(_ color: SIMD4<UInt32>, to coord: SIMD2<UInt32>) {
+        _airWriteTex2Du(self, coord, color, 0, 2)
+    }
+}
+public extension Texture2D where T == Int32 {
+    func read(_ coord: SIMD2<UInt32>) -> SIMD4<Int32> {
+        _airReadTex2Di(self, _airGetReadSampler(), coord, SIMD2<Int32>(0, 0), 0, 1).0
+    }
+}
+public extension WriteTexture2D where T == Int32 {
+    func write(_ color: SIMD4<Int32>, to coord: SIMD2<UInt32>) {
+        _airWriteTex2Di(self, coord, color, 0, 2)
+    }
+}
+
 // MARK: - 3-D textures
 //
-// NOTE: the read/write intrinsics + metadata are correct, but *dispatching* a 3-D
-// grid needs a uint3 `thread_position_in_grid`, and Swift's SIMD3<UInt32> lowers
-// to <4 x i32> (padded) where the driver wants <3 x i32> — so 3-D dispatch is
-// blocked on the same uint3 gap as 3-D grids generally (see docs/textures.md).
+// 3-D dispatch works — the compiler rewrites the padded SIMD3<UInt32> builtin
+// (<4 x i32>) to the <3 x i32> the driver wants. See examples/texture3d.
 
 /// A sampled/readable 3-D texture bound at `[[texture(i)]]`.
 public struct Texture3D<T> { @Device var _handle: UnsafePointer<UInt8> }

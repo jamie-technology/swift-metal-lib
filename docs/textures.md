@@ -62,16 +62,32 @@ name: a single `texture` role in `!swiftgpu.kernels`, and the normalize pass
 parses the recorded Swift type into `air.read`/`air.write`/`air.read_write` +
 `texture2d`/`texture3d<float, …>`.
 
-`Texture3D`/`WriteTexture3D` exist and their read/write intrinsics + metadata
-assemble, but **3-D dispatch is blocked on the uint3 gap**: it needs a uint3
-`thread_position_in_grid` (`<3 x i32>`), and Swift's `SIMD3<UInt32>` lowers to
-`<4 x i32>` (padded). Fixing uint3 (lowering/rewriting `<4 x i32>` → `<3 x i32>`
-for 3-component builtins) unblocks 3-D grids generally, including 3-D textures.
+`Texture3D<Float>`/`WriteTexture3D<Float>` work (`examples/texture3d` — voxel
+scale, GPU-verified). 3-D dispatch needs a uint3 `thread_position_in_grid`; the
+normalize pass rewrites Swift's padded `SIMD3<UInt32>` (`<4 x i32>`) builtin param
+to the `<3 x i32>` the driver expects.
+
+## Element formats
+
+The generic element type selects both the intrinsic and the metadata type name:
+
+| Swift type | intrinsic suffix | AIR element | pixel format |
+| --- | --- | --- | --- |
+| `Texture2D<Float>` | `.v4f32` | `float` | `rgba32Float` |
+| `Texture2D<Float16>` | `.v4f16` | `half` | `rgba16Float` |
+| `Texture2D<UInt32>` | `.u.v4i32` | `uint` | `rgba32Uint` |
+| `Texture2D<Int32>` | `.s.v4i32` | `int` | `rgba32Sint` |
+
+The compiler parses the element from the recorded Swift type name into the
+`air.texture` `arg_type_name` (`texture2d<half|uint|int, …>`). All four
+read/write; `examples/utexture` verifies the `UInt32` path on GPU (`rgba32Uint`,
+per-channel add). Host: `texture` (Float) / `textureUInt` (UInt32) + `floats()` /
+`uints()` readback.
 
 ## Not yet
 
-- uint3 (3-D dispatch / `Texture3D`), other element types/formats (`half` =
-  `.v4f16`, `uint`/`int` = `.v4u32`/`.v4i32`), `sample()` with explicit samplers,
+- `half`/`int` host texture helpers (uint path is host-verified; half/int compile
+  + assemble, sharing the code path); `sample()` with explicit samplers,
   1D/array/cube textures, mip levels.
 - A kernel mixing textures *and* a constant global (would force typed pointers,
   which don't yet type the opaque texture/sampler operands).

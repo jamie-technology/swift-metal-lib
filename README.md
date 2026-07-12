@@ -174,9 +174,10 @@ item — see below.
       end-to-end. `Texture2D`/`WriteTexture2D`/`ReadWriteTexture2D<Float>` are
       package types the compiler lowers to `air.texture` args (opaque
       `ptr addrspace(1)`, no named struct); `.read`/`.write` call the `air.*`
-      intrinsics. `examples/texture` (invert) + `examples/rwtexture` (in-place
-      brighten), GPU-verified. 3-D types exist but dispatch is blocked on uint3.
-      See `docs/textures.md`.
+      intrinsics. Read/write/read_write access; `Float`/`Float16`/`UInt32`/`Int32`
+      element formats; 2-D and 3-D. `examples/texture` (invert), `rwtexture`
+      (in-place brighten), `utexture` (uint texels), `texture3d` (voxel scale) —
+      GPU-verified. See `docs/textures.md`.
 - [x] **Atomics** (second package) — fetch add/sub/max/min/and/or/xor on `UInt32`
       *and* `Int32`, float atomic add, load/store, exchange, and compare-exchange,
       over the `air.atomic.global.*` intrinsics (no special type — MSL atomics are
