@@ -41,12 +41,25 @@ into the LLVM pipeline **after all `-O` passes, before the module is printed**
 Address spaces are **not** rewritten here — IRGen already emits them natively
 (see `docs/address-spaces.md`). That's why the pass is small.
 
+## `-emit-metallib`: one command, no `smc`
+
+`swift-frontend -emit-metallib` emits the AIR, then invokes `xcrun metal-as` and
+`xcrun metallib` (a `packageMetallib` helper in `FrontendTool.cpp`) to produce a
+loadable `.metallib` in one step:
+
+```sh
+swift-frontend -emit-metallib -O -parse-as-library kernel.swift -o kernel.metallib
+```
+
+Verified: `swift-frontend -emit-metallib` on `examples/devadd` → a MetalLib
+executable that runs correctly on the GPU. **This is the `smc` replacement** —
+the compiler owns the whole pipeline.
+
 ## Remaining to fully retire `smc`
 
-- **Driver routing**: `swiftc -emit-air` isn't recognized by the driver yet
-  (only `swift-frontend`); add driver handling.
-- **`-emit-metallib`**: a mode that invokes `xcrun metal-as`/`metallib` from the
-  frontend (see the exploration in `docs/fork-changes.md`), producing a
-  `.metallib` in one step.
+- **`swiftc` driver routing**: `swiftc` uses `swift-driver` (a separate Swift
+  package), not the legacy C++ driver. `-emit-air`/`-emit-metallib` work via
+  `swift-frontend` directly (and the legacy C++ driver, which recognizes them);
+  add the modes to `swift-driver` for `swiftc -emit-metallib`.
 - **Examples**: `add`/`vscale`/`indices` use `@Binding` but not `@Device`, so on
   the native path their buffers would be `addrspace(0)`; port them to `@Device`.
