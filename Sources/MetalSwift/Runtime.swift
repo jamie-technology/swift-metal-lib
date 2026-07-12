@@ -126,6 +126,26 @@ public final class ComputeContext {
         return tex
     }
 
+    /// Dispatch a kernel with buffer arguments over a 3-D grid (uint3 position).
+    public func dispatchThreads3D(_ function: String, buffers: [MTLBuffer],
+                                  width: Int, height: Int, depth: Int,
+                                  threadsPerGroup: (Int, Int, Int) = (4, 4, 4)) throws {
+        let pso = try pipeline(function)
+        guard let cb = queue.makeCommandBuffer(),
+              let enc = cb.makeComputeCommandEncoder() else {
+            throw GPUError(message: "could not encode command buffer")
+        }
+        enc.setComputePipelineState(pso)
+        for (i, b) in buffers.enumerated() { enc.setBuffer(b, offset: 0, index: i) }
+        enc.dispatchThreads(MTLSize(width: width, height: height, depth: depth),
+                            threadsPerThreadgroup: MTLSize(width: threadsPerGroup.0,
+                                                           height: threadsPerGroup.1, depth: threadsPerGroup.2))
+        enc.endEncoding()
+        cb.commit()
+        cb.waitUntilCompleted()
+        if let e = cb.error { throw GPUError(message: "GPU execution failed: \(e)") }
+    }
+
     /// Make an `rgba32Float` 3-D texture, optionally initialised from `pixels`.
     public func texture3D(width: Int, height: Int, depth: Int,
                           pixels: [Float]? = nil,
