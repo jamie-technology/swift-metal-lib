@@ -43,5 +43,9 @@ let package = Package(
                           path: "examples/constdata/Host"),
         .executableTarget(name: "intmath-example", dependencies: ["MetalSwift"],
                           path: "examples/intmath/Host"),
+        .executableTarget(name: "multikernel-example", dependencies: ["MetalSwift"],
+                          path: "examples/multikernel/Host"),
+        .executableTarget(name: "grid2d-example", dependencies: ["MetalSwift"],
+                          path: "examples/grid2d/Host"),
     ]
 )

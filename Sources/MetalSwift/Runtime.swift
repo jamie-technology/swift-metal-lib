@@ -58,6 +58,28 @@ public final class ComputeContext {
         if let e = cb.error { throw GPUError(message: "GPU execution failed: \(e)") }
     }
 
+    /// Dispatch over a 2-D grid — for kernels taking a `SIMD2<UInt32>`
+    /// `@ThreadPositionInGrid` (MSL `uint2`).
+    public func dispatch2D(_ function: String,
+                           buffers: [MTLBuffer],
+                           width: Int, height: Int,
+                           threadsPerGroup: (Int, Int) = (8, 8)) throws {
+        let pso = try pipeline(function)
+        guard let cb = queue.makeCommandBuffer(),
+              let enc = cb.makeComputeCommandEncoder() else {
+            throw GPUError(message: "could not encode command buffer")
+        }
+        enc.setComputePipelineState(pso)
+        for (i, b) in buffers.enumerated() { enc.setBuffer(b, offset: 0, index: i) }
+        enc.dispatchThreads(MTLSize(width: width, height: height, depth: 1),
+                            threadsPerThreadgroup: MTLSize(width: threadsPerGroup.0,
+                                                           height: threadsPerGroup.1, depth: 1))
+        enc.endEncoding()
+        cb.commit()
+        cb.waitUntilCompleted()
+        if let e = cb.error { throw GPUError(message: "GPU execution failed: \(e)") }
+    }
+
     /// Make a device buffer initialised from `array`.
     public func buffer<T>(_ array: [T]) -> MTLBuffer {
         var a = array

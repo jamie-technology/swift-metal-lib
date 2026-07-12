@@ -112,6 +112,19 @@ global lives there. See `examples/constdata`.
 
 ## Known refinements (not yet done)
 
+- **Device *scalar* values in non-uniform expressions.** A value loaded from a
+  device pointer is typed `device T`. When the whole expression is device-uniform
+  (`out[i] = a[i] + b[i]`, or SIMD arithmetic on a loaded vector) it works. But
+  mixing a device scalar with a non-device value in a *generic* operator/
+  initializer — `Int(dims[i])`, `gid.y &* width` where `width = dims[0]` — or
+  storing a *computed non-device* value into a device location — `out[i] =
+  UInt32(x)` — trips the AST verifier (`result of ApplyExpr does not match … device
+  T vs T`). The clean fix is drop-on-load *during solving* (a pointee read yields
+  the unqualified value), which the current pointee-qualification model can't do
+  cleanly (the subscript's `Pointee` type variable is shared between the pointer's
+  storage, which needs the qualifier, and the loaded value, which drops it).
+  Workaround: keep the stored value device-uniform (`examples/grid2d` transposes
+  device floats and computes indices in plain `Int`).
 - Local `@Device var` bindings inside a body: the Sema wrap is currently applied
   to parameters (`DeclKind::Param`); extend to `DeclKind::Var`.
 - `@Threadgroup var shared: …` as an *allocation* in addrspace(3) (storage-AS, vs

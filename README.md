@@ -153,9 +153,16 @@ item — see below.
 - [x] **Integer kernels** — Swift's overflow-checked `*`/`+` (with `llvm.trap`
       branches) assemble after `!prof` (branch_weights) stripping (`examples/intmath`)
 - [x] Examples ported to `@Device` + the native pipeline (`add`/`vscale`/`indices`)
+- [x] **Multiple kernels per module** — several `@Compute` functions → several
+      `air.kernel` entries in one metallib, dispatched by name (`examples/multikernel`)
+- [x] **Scalar/vector types** — `Float`/`Int32`/`UInt32`/`Float16` and
+      `SIMD2`/`SIMD3`/`SIMD4` as buffer element types (flattened to MSL leaves)
+- [x] **Thread builtins** — 6 position/count builtins, plus vector builtins for
+      2-D/3-D dispatch (`uint2`/`uint3` `thread_position_in_grid`, `examples/grid2d`)
+- [ ] Device *scalar* values in non-uniform generic expressions (drop-on-load);
+      see `docs/address-spaces.md`
 - [ ] Fully retire `smc`: `swiftc` driver routing for `-emit-air`/`-emit-metallib`
       (currently via `swift-frontend`; needs `swift-driver` support)
-- [ ] More builtins & scalar/vector types; more kernels per module
 - [ ] `threadgroup` shared storage (addrspace 3 allocation); atomics; textures
 - [ ] Enforce the GPU-safe subset with real diagnostics (reject heap allocation,
       ARC, concurrency, recursion, existentials, `throws` in kernel code)
