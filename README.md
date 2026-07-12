@@ -132,8 +132,17 @@ item — see below.
       *pointee*). IRGen emits `ptr addrspace(N)` natively (device=1/constant=2/
       threadgroup=3), value-transparent (drop-on-load) but pointer-distinct (no AS
       mixing). Works on params *and* local `var`s; GPU-verified (`examples/devadd`)
-- [ ] **Next:** wire this into `-emit-air`/`-emit-metallib` so `swiftc` owns the
-      whole pipeline, then delete `smc` (address-space rewrite is now a no-op)
+- [x] **`swift-frontend -emit-air`** — the compiler emits loadable Apple AIR
+      directly: an in-IRGen normalization pass swaps the AIR triple/datalayout,
+      strips `swiftcc`/`nuw`/`captures(none)`/host fn-attrs, expands `splat`
+      constants to `shufflevector` (metal-as's LLVM ~17 can't parse them), and
+      converts `!swiftgpu.kernels` → `air.kernel`/`air.buffer`. Straight to
+      `metal-as`/`metallib` → GPU, **no `smc` transform**. (`examples/devadd`)
+- [ ] Remaining to fully retire `smc`: driver (`swiftc`) routing for `-emit-air`,
+      an `-emit-metallib` mode that invokes `metal-as`/`metallib`, and porting
+      the examples to `@Device` (the native path needs it for `addrspace(1)`)
+- [ ] Refinement: value-level look-through for SIMD operator overloads
+      (`device SIMD4<Float> * 2.0`); `@Device var` explicit local annotations
 - [ ] More builtins & scalar/vector types; multiple kernels per module
 - [ ] `constant` / `threadgroup` address spaces; atomics; textures
 - [ ] Enforce the GPU-safe subset with real diagnostics (reject heap allocation,
