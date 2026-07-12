@@ -126,6 +126,47 @@ public final class ComputeContext {
         return tex
     }
 
+    /// Make an `rgba32Float` 3-D texture, optionally initialised from `pixels`.
+    public func texture3D(width: Int, height: Int, depth: Int,
+                          pixels: [Float]? = nil,
+                          usage: MTLTextureUsage = [.shaderRead, .shaderWrite]) -> MTLTexture {
+        let desc = MTLTextureDescriptor()
+        desc.textureType = .type3D
+        desc.pixelFormat = .rgba32Float
+        desc.width = width; desc.height = height; desc.depth = depth
+        desc.usage = usage
+        let tex = device.makeTexture(descriptor: desc)!
+        if let pixels {
+            pixels.withUnsafeBytes { raw in
+                tex.replace(region: MTLRegionMake3D(0, 0, 0, width, height, depth), mipmapLevel: 0, slice: 0,
+                            withBytes: raw.baseAddress!,
+                            bytesPerRow: width * 4 * MemoryLayout<Float>.stride,
+                            bytesPerImage: width * height * 4 * MemoryLayout<Float>.stride)
+            }
+        }
+        return tex
+    }
+
+    /// Dispatch a texture kernel over a 3-D grid (uint3 thread position).
+    public func dispatchTextures3D(_ function: String, textures: [MTLTexture],
+                                   width: Int, height: Int, depth: Int,
+                                   threadsPerGroup: (Int, Int, Int) = (4, 4, 4)) throws {
+        let pso = try pipeline(function)
+        guard let cb = queue.makeCommandBuffer(),
+              let enc = cb.makeComputeCommandEncoder() else {
+            throw GPUError(message: "could not encode command buffer")
+        }
+        enc.setComputePipelineState(pso)
+        for (i, t) in textures.enumerated() { enc.setTexture(t, index: i) }
+        enc.dispatchThreads(MTLSize(width: width, height: height, depth: depth),
+                            threadsPerThreadgroup: MTLSize(width: threadsPerGroup.0,
+                                                           height: threadsPerGroup.1, depth: threadsPerGroup.2))
+        enc.endEncoding()
+        cb.commit()
+        cb.waitUntilCompleted()
+        if let e = cb.error { throw GPUError(message: "GPU execution failed: \(e)") }
+    }
+
     /// Dispatch a kernel that takes `[[texture(i)]]` arguments over a 2-D grid.
     public func dispatchTextures(_ function: String,
                                  textures: [MTLTexture],
@@ -174,6 +215,17 @@ public extension MTLTexture {
         out.withUnsafeMutableBytes { raw in
             getBytes(raw.baseAddress!, bytesPerRow: width * 4 * MemoryLayout<Float>.stride,
                      from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
+        }
+        return out
+    }
+
+    /// Read an `rgba32Float` 3-D texture back as `[Float]` (4 per voxel).
+    func floats3D() -> [Float] {
+        var out = [Float](repeating: 0, count: width * height * depth * 4)
+        out.withUnsafeMutableBytes { raw in
+            getBytes(raw.baseAddress!, bytesPerRow: width * 4 * MemoryLayout<Float>.stride,
+                     bytesPerImage: width * height * 4 * MemoryLayout<Float>.stride,
+                     from: MTLRegionMake3D(0, 0, 0, width, height, depth), mipmapLevel: 0, slice: 0)
         }
         return out
     }

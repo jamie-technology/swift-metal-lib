@@ -53,10 +53,25 @@ intrinsics via `@_silgen_name`. Compiled alongside the kernel.
   driver accepts). Typing is all-or-nothing, so a half-typed module (typed loads
   + opaque `air.*` operands) is avoided.
 
+## Access & dimensions
+
+Access is per-type: `Texture2D` (read), `WriteTexture2D` (write),
+`ReadWriteTexture2D` (`access::read_write`, `examples/rwtexture` — in-place
+brighten, GPU-verified). The compiler recovers dimension + access from the type
+name: a single `texture` role in `!swiftgpu.kernels`, and the normalize pass
+parses the recorded Swift type into `air.read`/`air.write`/`air.read_write` +
+`texture2d`/`texture3d<float, …>`.
+
+`Texture3D`/`WriteTexture3D` exist and their read/write intrinsics + metadata
+assemble, but **3-D dispatch is blocked on the uint3 gap**: it needs a uint3
+`thread_position_in_grid` (`<3 x i32>`), and Swift's `SIMD3<UInt32>` lowers to
+`<4 x i32>` (padded). Fixing uint3 (lowering/rewriting `<4 x i32>` → `<3 x i32>`
+for 3-component builtins) unblocks 3-D grids generally, including 3-D textures.
+
 ## Not yet
 
-- Access qualifier is per-type (`Texture2D` = read, `WriteTexture2D` = write);
-  `read_write`, other element types/formats, `sample()` with explicit samplers,
-  1D/3D/array/cube textures, mip levels.
+- uint3 (3-D dispatch / `Texture3D`), other element types/formats (`half` =
+  `.v4f16`, `uint`/`int` = `.v4u32`/`.v4i32`), `sample()` with explicit samplers,
+  1D/array/cube textures, mip levels.
 - A kernel mixing textures *and* a constant global (would force typed pointers,
   which don't yet type the opaque texture/sampler operands).

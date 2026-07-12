@@ -62,3 +62,33 @@ public extension ReadWriteTexture2D where T == Float {
                            coord, color, 0, 2)
     }
 }
+
+// MARK: - 3-D textures
+//
+// NOTE: the read/write intrinsics + metadata are correct, but *dispatching* a 3-D
+// grid needs a uint3 `thread_position_in_grid`, and Swift's SIMD3<UInt32> lowers
+// to <4 x i32> (padded) where the driver wants <3 x i32> — so 3-D dispatch is
+// blocked on the same uint3 gap as 3-D grids generally (see docs/textures.md).
+
+/// A sampled/readable 3-D texture bound at `[[texture(i)]]`.
+public struct Texture3D<T> { @Device var _handle: UnsafePointer<UInt8> }
+/// A writable 3-D texture bound at `[[texture(i)]]`.
+public struct WriteTexture3D<T> { @Device var _handle: UnsafeMutablePointer<UInt8> }
+
+@_silgen_name("air.read_texture_3d.v4f32")
+func _airReadTexture3D(_ t: Texture3D<Float>, _ s: _Sampler, _ c: SIMD3<UInt32>,
+                       _ o: SIMD3<Int32>, _ lod: Int32, _ f: Int32) -> (SIMD4<Float>, UInt8)
+@_silgen_name("air.write_texture_3d.v4f32")
+func _airWriteTexture3D(_ t: WriteTexture3D<Float>, _ c: SIMD3<UInt32>,
+                        _ color: SIMD4<Float>, _ lod: Int32, _ f: Int32)
+
+public extension Texture3D where T == Float {
+    func read(_ coord: SIMD3<UInt32>) -> SIMD4<Float> {
+        _airReadTexture3D(self, _airGetReadSampler(), coord, SIMD3<Int32>(0,0,0), 0, 1).0
+    }
+}
+public extension WriteTexture3D where T == Float {
+    func write(_ color: SIMD4<Float>, to coord: SIMD3<UInt32>) {
+        _airWriteTexture3D(self, coord, color, 0, 2)
+    }
+}
