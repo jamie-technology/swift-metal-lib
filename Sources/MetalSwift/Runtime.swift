@@ -205,6 +205,42 @@ public final class ComputeContext {
         if let e = cb.error { throw GPUError(message: "GPU execution failed: \(e)") }
     }
 
+    /// Make a sampler state (default: linear filter, clamp-to-edge, normalized
+    /// coords) for `Texture2D.sample`.
+    public func sampler(min: MTLSamplerMinMagFilter = .linear,
+                        mag: MTLSamplerMinMagFilter = .linear,
+                        address: MTLSamplerAddressMode = .clampToEdge) -> MTLSamplerState {
+        let d = MTLSamplerDescriptor()
+        d.minFilter = min; d.magFilter = mag
+        d.sAddressMode = address; d.tAddressMode = address; d.rAddressMode = address
+        return device.makeSamplerState(descriptor: d)!
+    }
+
+    /// Dispatch a kernel taking `[[texture(i)]]` + `[[sampler(i)]]` args over a
+    /// 2-D grid (for `Texture2D.sample`).
+    public func dispatchSampled(_ function: String,
+                                textures: [MTLTexture], samplers: [MTLSamplerState],
+                                buffers: [MTLBuffer] = [],
+                                width: Int, height: Int,
+                                threadsPerGroup: (Int, Int) = (8, 8)) throws {
+        let pso = try pipeline(function)
+        guard let cb = queue.makeCommandBuffer(),
+              let enc = cb.makeComputeCommandEncoder() else {
+            throw GPUError(message: "could not encode command buffer")
+        }
+        enc.setComputePipelineState(pso)
+        for (i, t) in textures.enumerated() { enc.setTexture(t, index: i) }
+        for (i, s) in samplers.enumerated() { enc.setSamplerState(s, index: i) }
+        for (i, b) in buffers.enumerated() { enc.setBuffer(b, offset: 0, index: i) }
+        enc.dispatchThreads(MTLSize(width: width, height: height, depth: 1),
+                            threadsPerThreadgroup: MTLSize(width: threadsPerGroup.0,
+                                                           height: threadsPerGroup.1, depth: 1))
+        enc.endEncoding()
+        cb.commit()
+        cb.waitUntilCompleted()
+        if let e = cb.error { throw GPUError(message: "GPU execution failed: \(e)") }
+    }
+
     /// Dispatch a kernel that takes `[[texture(i)]]` arguments over a 2-D grid.
     public func dispatchTextures(_ function: String,
                                  textures: [MTLTexture],

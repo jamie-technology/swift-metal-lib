@@ -19,11 +19,22 @@ public struct WriteTexture2D<T> { @Device var _handle: UnsafeMutablePointer<UInt
 /// A read+write 2-D texture bound at `[[texture(i)]]` (MSL `access::read_write`).
 public struct ReadWriteTexture2D<T> { @Device var _handle: UnsafeMutablePointer<UInt8> }
 
-/// An opaque sampler handle (constant address space), produced by the driver.
+/// A texture sampler bound at `[[sampler(i)]]`. Pass one to `Texture2D.sample`
+/// for filtered/normalized-coordinate reads; the host supplies the sampler state
+/// (filter, address mode) via `ComputeContext.sampler`.
+public struct Sampler { @Constant var _handle: UnsafePointer<UInt8> }
+
+/// An opaque sampler handle (constant address space), produced by the driver —
+/// used by the point-read `.read` path (`air.get_read_sampler`).
 struct _Sampler { @Constant var _h: UnsafePointer<UInt8> }
 
 @_silgen_name("air.get_read_sampler")
 func _airGetReadSampler() -> _Sampler
+
+@_silgen_name("air.sample_texture_2d.v4f32")
+func _airSampleTexture2D(_ t: Texture2D<Float>, _ s: Sampler, _ uv: SIMD2<Float>,
+                         _ b1: Bool, _ offset: SIMD2<Int32>, _ b2: Bool,
+                         _ lodBias: Float, _ lodClamp: Float, _ flags: Int32) -> (SIMD4<Float>, UInt8)
 
 @_silgen_name("air.read_texture_2d.v4f32")
 func _airReadTexture2D(_ t: Texture2D<Float>, _ sampler: _Sampler,
@@ -34,10 +45,15 @@ func _airWriteTexture2D(_ t: WriteTexture2D<Float>, _ coord: SIMD2<UInt32>,
                         _ color: SIMD4<Float>, _ lod: Int32, _ flags: Int32)
 
 public extension Texture2D where T == Float {
-    /// Read the texel at integer `coord`.
+    /// Read the texel at integer `coord` (point read, no filtering).
     func read(_ coord: SIMD2<UInt32>) -> SIMD4<Float> {
         _airReadTexture2D(self, _airGetReadSampler(), coord,
                           SIMD2<Int32>(0, 0), 0, 1).0
+    }
+    /// Sample at normalized `uv` (0…1) through `sampler` (filtered).
+    func sample(_ sampler: Sampler, _ uv: SIMD2<Float>) -> SIMD4<Float> {
+        _airSampleTexture2D(self, sampler, uv, true, SIMD2<Int32>(0, 0), false,
+                            0, 0, 0).0
     }
 }
 

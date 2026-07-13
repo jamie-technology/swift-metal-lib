@@ -175,9 +175,10 @@ item — see below.
       package types the compiler lowers to `air.texture` args (opaque
       `ptr addrspace(1)`, no named struct); `.read`/`.write` call the `air.*`
       intrinsics. Read/write/read_write access; `Float`/`Float16`/`UInt32`/`Int32`
-      element formats; 2-D and 3-D. `examples/texture` (invert), `rwtexture`
-      (in-place brighten), `utexture` (uint texels), `texture3d` (voxel scale) —
-      GPU-verified. See `docs/textures.md`.
+      element formats; 2-D and 3-D; **filtered `sample()`** through a `Sampler`
+      argument. `examples/texture`, `rwtexture`, `utexture`, `texture3d`,
+      `sample` (bilinear upsample) — GPU-verified. Binding slots via `@Binding(to:)`
+      (kind from the type — no `@Texture`/`@Sampler` attribute). See `docs/textures.md`.
 - [x] **Atomics** (second package) — fetch add/sub/max/min/and/or/xor on `UInt32`
       *and* `Int32`, float atomic add, load/store, exchange, and compare-exchange,
       over the `air.atomic.global.*` intrinsics (no special type — MSL atomics are

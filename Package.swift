@@ -59,6 +59,8 @@ let package = Package(
                           path: "examples/texture3d/Host"),
         .executableTarget(name: "utexture-example", dependencies: ["MetalSwift"],
                           path: "examples/utexture/Host"),
+        .executableTarget(name: "sample-example", dependencies: ["MetalSwift"],
+                          path: "examples/sample/Host"),
         .executableTarget(name: "histogram-example", dependencies: ["MetalSwift"],
                           path: "examples/histogram/Host"),
         .executableTarget(name: "atomics-example", dependencies: ["MetalSwift"],

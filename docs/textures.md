@@ -84,10 +84,30 @@ read/write; `examples/utexture` verifies the `UInt32` path on GPU (`rgba32Uint`,
 per-channel add). Host: `texture` (Float) / `textureUInt` (UInt32) + `floats()` /
 `uints()` readback.
 
+## Sampling
+
+`Texture2D<Float>.sample(_ sampler: Sampler, _ uv: SIMD2<Float>)` does a filtered
+read at normalized coords through a `Sampler` argument (`air.sample_texture_2d`).
+`Sampler` is a package type (a `@Constant` handle → `ptr addrspace(2)`) the
+compiler binds as an `air.sampler` argument in its own `[[sampler(N)]]` namespace.
+The same `Texture2D` (`air.read`) serves both `.read` (point) and `.sample`
+(filtered) — the driver accepts sampling from a read texture. Host:
+`ComputeContext.sampler(min:mag:address:)` + `dispatchSampled(_:textures:
+samplers:buffers:…)`. `examples/sample` bilinearly upsamples a 2×2 → 4×4 texture,
+GPU-verified (corners clamp, interior interpolates).
+
+## Binding slots
+
+The resource *kind* comes from the type (`Texture2D`/`Sampler`/…) — there is no
+`@Texture`/`@Sampler` attribute. The binding *index* within each namespace
+(`[[buffer(N)]]` / `[[texture(N)]]` / `[[sampler(N)]]`) is set by the existing
+`@Binding(to: N)` if present, else appearance order. So one attribute (`@Binding`)
+gives explicit slots for every resource kind, and the type says what it is.
+
 ## Not yet
 
 - `half`/`int` host texture helpers (uint path is host-verified; half/int compile
-  + assemble, sharing the code path); `sample()` with explicit samplers,
-  1D/array/cube textures, mip levels.
+  + assemble, sharing the code path); explicit sampler *state in the shader*
+  (`constexpr sampler`), 1D/array/cube textures, mip levels.
 - A kernel mixing textures *and* a constant global (would force typed pointers,
   which don't yet type the opaque texture/sampler operands).
