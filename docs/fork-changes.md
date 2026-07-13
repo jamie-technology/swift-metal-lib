@@ -92,6 +92,13 @@ Atomics (`examples/histogram`, `packages/Atomics`):
 The atomic ops reuse everything else (`@Device` pointers, `air.*` convergent
 calls, opaque pointers) — no atomic type needed (`atomic_uint` is a device i32).
 
+GPU-safe subset enforcement:
+
+| File | Change |
+| --- | --- |
+| `include/swift/AST/DiagnosticsSema.def` | `gpu_kernel_effect` / `gpu_kernel_nonvoid` / `gpu_unsafe_construct` / `gpu_unsafe_in_kernel` diagnostics |
+| `lib/Sema/MiscDiagnostics.cpp` | `checkGPUKernel` + `GPUSafetyWalker`, called from `performAbstractFuncDeclDiagnostics` — rejects `throws`/`async`/non-Void and heap/ARC/existential values in `@Compute` bodies (type-based; `InlineArray`/`SIMD` literals pass). See `docs/gpu-safe-subset.md` |
+
 Constant global data — a program-scope `let table: InlineArray<N,Float> = [...]`
 placed in the constant address space (see `docs/address-spaces.md`):
 

@@ -184,8 +184,13 @@ item — see below.
       over the `air.atomic.global.*` intrinsics (no special type — MSL atomics are
       just device i32/f32). `examples/histogram` + `examples/atomics` (CAS-loop
       counter), GPU-verified. See `docs/atomics.md`.
-- [ ] Enforce the GPU-safe subset with real diagnostics (reject heap allocation,
-      ARC, concurrency, recursion, existentials, `throws` in kernel code)
+- [x] **Enforce the GPU-safe subset** — `@Compute` kernels are checked after
+      type-checking and rejected with a source-level diagnostic for `throws`,
+      `async`, non-`Void` return, and heap/ARC/existential values (class, `any P`,
+      `Array`/`String`/`Dictionary`/`Set`, `print`). Type-based, so
+      `InlineArray`/`SIMD` literals are fine. Transitive call-graph checking
+      (recursion, unsafe helpers) is the remaining piece. See
+      `docs/gpu-safe-subset.md`.
 - [ ] AIR intrinsics (SIMD-group ops, simdgroup matrices, MetalPerformancePrimitives)
 - [ ] Graphics stages (`@Vertex`/`@Fragment`), then a CUDA/NVPTX backend
 
