@@ -188,8 +188,10 @@ item — see below.
       type-checking and rejected with a source-level diagnostic for `throws`,
       `async`, non-`Void` return, and heap/ARC/existential values (class, `any P`,
       `Array`/`String`/`Dictionary`/`Set`, `print`). Type-based, so
-      `InlineArray`/`SIMD` literals are fine. Transitive call-graph checking
-      (recursion, unsafe helpers) is the remaining piece. See
+      `InlineArray`/`SIMD` literals are fine. A SIL call-graph check
+      (`diagnoseGPUUnsafeConstructs`) then follows the kernel's transitive calls
+      into user helpers and catches **recursion** (direct/mutual) and
+      **heap allocation** (`alloc_ref`/`alloc_box`) structurally. See
       `docs/gpu-safe-subset.md`.
 - [ ] AIR intrinsics (SIMD-group ops, simdgroup matrices, MetalPerformancePrimitives)
 - [ ] Graphics stages (`@Vertex`/`@Fragment`), then a CUDA/NVPTX backend

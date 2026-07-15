@@ -44,12 +44,36 @@ error: this value is not available in GPU code: no Array on the GPU (use InlineA
 - **One error per location.** A `let x = <unsafe>` reports once, at the
   expression.
 
+## The SIL call-graph check (airtight half)
+
+The AST check above sees only the kernel's own body. A second, structural check
+(`diagnoseGPUUnsafeConstructs` in `lib/SILOptimizer/Mandatory/DiagnoseGPUUnsafe.cpp`,
+called from `runSILDiagnosticPasses` on the canonical SIL — after mandatory
+inlining) follows the kernel's **transitive call graph** into user helper
+functions and flags what the AST check can't see:
+
+- **Heap allocation**, structurally — `alloc_ref` / `alloc_ref_dynamic` (class),
+  `alloc_box` (escaping capture), `alloc_existential_box` — even inside a helper.
+- **Recursion**, direct or mutual — a cycle in the call graph (the GPU has no
+  call stack). Reported at the recursive function, with a note pointing to the
+  kernel it's reached from.
+
+```
+error: recursion is not available in GPU code (no call stack)
+note: reached from GPU kernel 'krec'
+error: a class instance (needs ARC / the heap) is not available in GPU code
+note: reached from GPU kernel 'kheap'
+```
+
+It scans **only user-module functions** (skips serialized stdlib) and runs after
+inlining, so it sees the real de-wrapped call graph without false-flagging stdlib
+internals — all examples (texture `.read`/`.write` wrappers, `InlineArray`, the
+barrier, atomics) pass clean. It's a direct call on the `SILModule`, not a
+pass-manager pass (the fork's pass manager is Swift-only for new passes), gated on
+the module actually containing a `@Compute` kernel.
+
 ## Not yet
 
-- **Transitive call graph.** Only the `@Compute` function's own body is checked;
-  an unsafe construct in a *helper* it calls isn't flagged at the source yet
-  (it'll still fail downstream). A SIL-level pass over the kernel's reachable
-  call tree would close this — and also catch recursion (no GPU stack) and heap
-  allocation that only appears after inlining.
-- Recursion, and heap allocation via APIs that don't surface an unsafe *type* at
-  the call (custom allocators, `Unmanaged`, etc.).
+- Heap allocation via APIs that surface neither an unsafe *type* at the call site
+  (AST) nor an `alloc_*` in user code (SIL) — e.g. an unsafe construct entirely
+  inside a serialized stdlib function that isn't inlined. Rare in practice.

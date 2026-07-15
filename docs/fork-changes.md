@@ -98,6 +98,7 @@ GPU-safe subset enforcement:
 | --- | --- |
 | `include/swift/AST/DiagnosticsSema.def` | `gpu_kernel_effect` / `gpu_kernel_nonvoid` / `gpu_unsafe_construct` / `gpu_unsafe_in_kernel` diagnostics |
 | `lib/Sema/MiscDiagnostics.cpp` | `checkGPUKernel` + `GPUSafetyWalker`, called from `performAbstractFuncDeclDiagnostics` — rejects `throws`/`async`/non-Void and heap/ARC/existential values in `@Compute` bodies (type-based; `InlineArray`/`SIMD` literals pass). See `docs/gpu-safe-subset.md` |
+| `lib/SILOptimizer/Mandatory/DiagnoseGPUUnsafe.cpp` | `diagnoseGPUUnsafeConstructs(SILModule&)` — the airtight call-graph half: DFS from each `@Compute` kernel over user-module callees, flagging recursion (cycle) + `alloc_ref`/`alloc_box`/`alloc_existential_box`. Called from `runSILDiagnosticPasses` (Passes.cpp) on canonical SIL; declared in `Passes.h`. A direct call, not a pass-manager pass (new C++ passes aren't supported there) |
 
 Constant global data — a program-scope `let table: InlineArray<N,Float> = [...]`
 placed in the constant address space (see `docs/address-spaces.md`):
