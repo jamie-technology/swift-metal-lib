@@ -72,8 +72,44 @@ barrier, atomics) pass clean. It's a direct call on the `SILModule`, not a
 pass-manager pass (the fork's pass manager is Swift-only for new passes), gated on
 the module actually containing a `@Compute` kernel.
 
-## Not yet
+## The post-optimization backstop (airtight)
 
-- Heap allocation via APIs that surface neither an unsafe *type* at the call site
-  (AST) nor an `alloc_*` in user code (SIL) — e.g. an unsafe construct entirely
-  inside a serialized stdlib function that isn't inlined. Rare in practice.
+The two checks above still miss one case: a runtime dependency that returns a
+GPU-*safe* type (so the AST type-check is happy) and lives entirely inside a
+serialized stdlib function (so the pre-`-O` SIL check, which skips stdlib, never
+sees it). For example `Int.random(in:)` returns `Int`, but bottoms out in
+`swift_stdlib_random` — a runtime function with no GPU body. Left unchecked, the
+symbol-strip in the AIR normalizer turns it into `call undef(...)`: the build
+*succeeds* and produces a silently-broken kernel.
+
+`diagnoseGPUUnsafePostOpt` (same file, called from `performSILProcessing` after
+`performSILOptimizations`, **only under `-O`**) closes it. On the fully-optimized
+SIL — after inlining, specialization, and dead-code elimination, so *what remains
+is what ships* — it walks the reachable graph from each kernel (now including
+stdlib) and rejects:
+
+- any surviving **heap allocation** (`alloc_ref`/`alloc_box`/…), and
+- a call to an **external function with no GPU implementation** that isn't an
+  `air.*` intrinsic — the unresolvable runtime/stdlib dependency.
+
+```
+error: GPU kernel code calls 'Swift.SystemRandomNumberGenerator.init() -> …',
+       which has no GPU implementation (a runtime/standard-library function)
+note: reached from GPU kernel 'kslip'
+```
+
+Why `-O` only: a working GPU build *requires* `-O` regardless (un-inlined stdlib
+would emit undefined AIR symbols), and only optimized SIL is "what ships" — at
+`-Onone`, un-inlined trap thunks (`_assertionFailure`, which becomes `llvm.trap`
+under `-O`) and other stdlib calls would false-positive. The pre-`-O` check still
+runs at `-Onone` for recursion/heap. Because the pre-`-O` check bails the
+pipeline on error *before* optimization, the post-`-O` check only runs on code
+that already passed — no double reporting.
+
+## Coverage
+
+Between the three layers — AST (signature + body literals), pre-`-O` SIL (user
+call graph: recursion + heap), and post-`-O` SIL (the whole reachable graph:
+runtime dependencies + surviving allocation) — a `@Compute` kernel that would
+reference anything unavailable on the GPU is rejected at compile time rather than
+producing a broken metallib.

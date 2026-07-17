@@ -188,11 +188,14 @@ item — see below.
       type-checking and rejected with a source-level diagnostic for `throws`,
       `async`, non-`Void` return, and heap/ARC/existential values (class, `any P`,
       `Array`/`String`/`Dictionary`/`Set`, `print`). Type-based, so
-      `InlineArray`/`SIMD` literals are fine. A SIL call-graph check
-      (`diagnoseGPUUnsafeConstructs`) then follows the kernel's transitive calls
-      into user helpers and catches **recursion** (direct/mutual) and
-      **heap allocation** (`alloc_ref`/`alloc_box`) structurally. See
-      `docs/gpu-safe-subset.md`.
+      `InlineArray`/`SIMD` literals are fine. A pre-`-O` SIL call-graph check
+      follows the kernel's transitive calls into user helpers for **recursion**
+      (direct/mutual) and **heap allocation**; a post-`-O` backstop then walks the
+      fully-optimized reachable graph (incl. stdlib) and rejects any surviving
+      allocation or **call to a runtime function with no GPU implementation**
+      (e.g. `Int.random` → `swift_stdlib_random`) — so a kernel referencing
+      anything unavailable on the GPU fails at compile time rather than producing
+      a broken metallib. See `docs/gpu-safe-subset.md`.
 - [ ] AIR intrinsics (SIMD-group ops, simdgroup matrices, MetalPerformancePrimitives)
 - [ ] Graphics stages (`@Vertex`/`@Fragment`), then a CUDA/NVPTX backend
 
