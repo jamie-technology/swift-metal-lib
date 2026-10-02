@@ -124,6 +124,35 @@ reductions/shuffles reuse everything (convergent `air.*` calls via
 | --- | --- |
 | `lib/FrontendTool/FrontendTool.cpp` | the typed-pointer rewrite's gate now also fires when the AIR text contains `@air.simd` (not only on a constant-address-space global). A SIMD-group intrinsic forces the driver's bitcode upgrader down a path that rejects an **opaque** module (`"Failed to upgrade function bitcode"`); the real `metal` compiler emits fully-typed AIR for these. `@air.simd` covers both `air.simd_*` and the `air.simdgroup_matrix_*` family |
 
+Graphics stages (`examples/triangle`, `MetalSwift.RenderContext`) — `@Vertex` /
+`@Fragment` shaders compiled to `air.vertex` / `air.fragment` entry points:
+
+| File | Change |
+| --- | --- |
+| `include/swift/AST/DeclAttr.def` (+ the 3 exhaustive visitors + ASTGen) | `@Vertex`/`@Fragment` (OnFunc), `@VertexID`/`@InstanceID` (OnParam), and `@ThreadIndexInSimdgroup`/`@SimdgroupIndexInThreadgroup` (OnParam) — codes 189–194 |
+| `lib/IRGen/IRGenModule.cpp` | `emitSwiftGPUKernelMetadata` recognises the stage (`compute`/`vertex`/`fragment`), the new builtins, and carries the result type as a 4th `!swiftgpu.kernels` operand |
+| `lib/IRGen/IRGen.cpp` | the normalizer lowers `vertex`→`air.vertex` / `fragment`→`air.fragment` (return → `air.position` / `air.render_target`, params → `air.vertex_id`/`air.instance_id`/`air.buffer`) and adds `air.compile_options` for graphics |
+| `lib/Sema/MiscDiagnostics.cpp` | `checkGPUKernel` also covers `@Vertex`/`@Fragment` (effects + body), but allows their non-`Void` return |
+| `lib/FrontendTool/FrontendTool.cpp` | the typed-pointer rewrite's `reDef`/`ksig` handle a multi-token vector return (`<4 x float>`) + the real return type, so the stage's metadata function pointer is typed |
+
+Typed pointers everywhere — the current macOS AGX driver rejects **any**
+opaque-pointer AIR module with *"Failed to upgrade function bitcode"* (older
+drivers accepted a plain opaque device-buffer kernel), all in
+`lib/FrontendTool/FrontendTool.cpp` unless noted:
+
+| Change | Detail |
+| --- | --- |
+| Unconditional typing | the `rewriteAIRToTypedPointers` gate is removed — every GPU module with a function is typed |
+| Intrinsic operands | `air.*` **call sites** get their `ptr addrspace(N) %x` operands typed from the operand's inferred pointee (GEP-result pointees are now recorded), and the matching **declarations** are retyped to agree — the driver rejects an opaque intrinsic pointer operand (fixes atomics) |
+| Operand attributes | a pointer operand carrying attrs (`ptr nonnull %cur`) is handled (cmpxchg's expected-value slot) |
+| Dead-declaration strip (`lib/IRGen/IRGen.cpp`) | unused `air.*` declarations (a package declares a whole family; a kernel calls a few) and `llvm.lifetime.*` markers are erased — a stray opaque declaration makes the module half-typed and metal-as rejects it |
+
+Known remaining gaps on the new driver (documented, in progress): texture
+kernels need the opaque-named-struct handle type (`%struct._texture_2d_t
+addrspace(1)*`, `%struct._sampler_t addrspace(2)*`) rather than the default
+`i8*`; the atomics CAS example needs its `UInt32` alloca pointer flattened to
+`i32*`; `grid3d`'s optimizer-produced byte-offset GEP chain needs a bitcast.
+
 Adding a decl attribute is exhaustive-visitor-heavy: `TypeCheckAttr.cpp`,
 `TypeCheckDeclOverride.cpp`, and `ASTDumper.cpp` each delete the default
 `visitDeclAttribute`, so every new attr needs an entry in all three.

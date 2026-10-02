@@ -204,8 +204,20 @@ item — see below.
       typed-pointer rewrite now also fires on `air.simd*` modules, since the
       driver rejects opaque SIMD-group bitcode. `examples/simdreduce`,
       GPU-verified. See `docs/simd-group.md`.
+- [x] **Graphics stages** (`@Vertex` / `@Fragment`) — vertex + fragment shaders
+      lowered to `air.vertex` / `air.fragment` entry points (not `air.kernel`).
+      `@VertexID`/`@InstanceID` builtins, `SIMD4<Float>` return → `[[position]]` /
+      `[[color(0)]]`; `RenderContext` renders offscreen + reads back.
+      `examples/triangle`, GPU-verified (renders red). See `docs/graphics.md`.
+- [x] **Typed pointers everywhere** — the current macOS AGX driver rejects *any*
+      opaque-pointer AIR ("Failed to upgrade function bitcode"), so the
+      typed-pointer rewrite is now unconditional and also types `air.*` intrinsic
+      call sites + declarations (atomics), drops unused `air.*`/`llvm.lifetime`
+      declarations, and types vertex/fragment function-pointer metadata.
 - [ ] AIR intrinsics: simdgroup matrices, MetalPerformancePrimitives
-- [ ] Graphics stages (`@Vertex`/`@Fragment`), then a CUDA/NVPTX backend
+- [ ] Textures/atomics-CAS under the new driver: opaque-struct texture handles
+      (`%struct._texture_2d_t`) + CAS struct-pointer flattening (in progress)
+- [ ] A CUDA/NVPTX backend
 
 ## Layout
 
