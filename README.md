@@ -196,7 +196,15 @@ item — see below.
       (e.g. `Int.random` → `swift_stdlib_random`) — so a kernel referencing
       anything unavailable on the GPU fails at compile time rather than producing
       a broken metallib. See `docs/gpu-safe-subset.md`.
-- [ ] AIR intrinsics (SIMD-group ops, simdgroup matrices, MetalPerformancePrimitives)
+- [x] **SIMD-group ops** (third package) — reductions (`simdSum`/`Product`/`Min`/
+      `Max`), scans (`simdPrefix{Ex,In}clusiveSum`), shuffles
+      (`simdShuffle`/`Xor`/`Up`/`Down`, `simdBroadcast`/`First`), and
+      `simdBallot`, for `Float`/`Int32`/`UInt32`, over the `air.simd_*`
+      intrinsics (no special type). Required one compiler change — the
+      typed-pointer rewrite now also fires on `air.simd*` modules, since the
+      driver rejects opaque SIMD-group bitcode. `examples/simdreduce`,
+      GPU-verified. See `docs/simd-group.md`.
+- [ ] AIR intrinsics: simdgroup matrices, MetalPerformancePrimitives
 - [ ] Graphics stages (`@Vertex`/`@Fragment`), then a CUDA/NVPTX backend
 
 ## Layout

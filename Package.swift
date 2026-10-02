@@ -65,5 +65,7 @@ let package = Package(
                           path: "examples/histogram/Host"),
         .executableTarget(name: "atomics-example", dependencies: ["MetalSwift"],
                           path: "examples/atomics/Host"),
+        .executableTarget(name: "simdreduce-example", dependencies: ["MetalSwift"],
+                          path: "examples/simdreduce/Host"),
     ]
 )

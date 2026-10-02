@@ -116,6 +116,14 @@ which the driver back-end requires:
 | --- | --- |
 | `lib/FrontendTool/FrontendTool.cpp` | `rewriteAIRToTypedPointers` (textual): flatten Swift wrapper structs to MSL leaves + reconstruct typed pointers from `load`/`store`/`gep` element types; applied in place after `performLLVM`, before `metal-as` |
 
+SIMD-group ops (`examples/simdreduce`, `packages/SIMDGroup`) — the `air.simd_*`
+reductions/shuffles reuse everything (convergent `air.*` calls via
+`@_silgen_name`, scalar operands, no metadata contract), with one exception:
+
+| File | Change |
+| --- | --- |
+| `lib/FrontendTool/FrontendTool.cpp` | the typed-pointer rewrite's gate now also fires when the AIR text contains `@air.simd` (not only on a constant-address-space global). A SIMD-group intrinsic forces the driver's bitcode upgrader down a path that rejects an **opaque** module (`"Failed to upgrade function bitcode"`); the real `metal` compiler emits fully-typed AIR for these. `@air.simd` covers both `air.simd_*` and the `air.simdgroup_matrix_*` family |
+
 Adding a decl attribute is exhaustive-visitor-heavy: `TypeCheckAttr.cpp`,
 `TypeCheckDeclOverride.cpp`, and `ASTDumper.cpp` each delete the default
 `visitDeclAttribute`, so every new attr needs an entry in all three.
