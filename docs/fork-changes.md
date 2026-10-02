@@ -146,12 +146,12 @@ drivers accepted a plain opaque device-buffer kernel), all in
 | Intrinsic operands | `air.*` **call sites** get their `ptr addrspace(N) %x` operands typed from the operand's inferred pointee (GEP-result pointees are now recorded), and the matching **declarations** are retyped to agree — the driver rejects an opaque intrinsic pointer operand (fixes atomics) |
 | Operand attributes | a pointer operand carrying attrs (`ptr nonnull %cur`) is handled (cmpxchg's expected-value slot) |
 | Dead-declaration strip (`lib/IRGen/IRGen.cpp`) | unused `air.*` declarations (a package declares a whole family; a kernel calls a few) and `llvm.lifetime.*` markers are erased — a stray opaque declaration makes the module half-typed and metal-as rejects it |
+| Texture/sampler handle types | a pointer consumed by an `air.*_texture_Nd` / sampler intrinsic is typed as its opaque named struct (`%struct._texture_2d_t`/`_3d_t`, `%struct._sampler_t`) — inferred from the intrinsic name — not `i8*`; the opaque type defs are emitted and the sampler-getter's return type is retyped |
+| Wrapper-struct alloca flatten | `%x = alloca %Ts6UInt32V` → `alloca i32`, so the CAS `expected` slot is consistently `i32*` |
+| Mixed-type GEP bitcast | an optimizer byte-offset chain (`gep i8 … gep i8 … gep i32`, e.g. `grid3d`) gets a `bitcast` where the base's pointee and the GEP's element type disagree |
 
-Known remaining gaps on the new driver (documented, in progress): texture
-kernels need the opaque-named-struct handle type (`%struct._texture_2d_t
-addrspace(1)*`, `%struct._sampler_t addrspace(2)*`) rather than the default
-`i8*`; the atomics CAS example needs its `UInt32` alloca pointer flattened to
-`i32*`; `grid3d`'s optimizer-produced byte-offset GEP chain needs a bitcast.
+With these, **all 20 examples are GPU-verified on the current driver** (the
+driver change had otherwise reduced the opaque-pointer suite to ~1 passing).
 
 Adding a decl attribute is exhaustive-visitor-heavy: `TypeCheckAttr.cpp`,
 `TypeCheckDeclOverride.cpp`, and `ASTDumper.cpp` each delete the default

@@ -211,12 +211,14 @@ item — see below.
       `examples/triangle`, GPU-verified (renders red). See `docs/graphics.md`.
 - [x] **Typed pointers everywhere** — the current macOS AGX driver rejects *any*
       opaque-pointer AIR ("Failed to upgrade function bitcode"), so the
-      typed-pointer rewrite is now unconditional and also types `air.*` intrinsic
-      call sites + declarations (atomics), drops unused `air.*`/`llvm.lifetime`
-      declarations, and types vertex/fragment function-pointer metadata.
+      typed-pointer rewrite is now unconditional and also: types `air.*` intrinsic
+      call sites + declarations (atomics); gives textures/samplers their opaque
+      named-struct handle types (`%struct._texture_2d_t addrspace(1)*`,
+      `%struct._sampler_t addrspace(2)*`); flattens wrapper-struct allocas (CAS
+      `expected` slot); bitcasts mixed-type GEP chains (`grid3d`); drops unused
+      `air.*`/`llvm.lifetime` declarations; and types vertex/fragment metadata
+      function pointers. **All 20 examples GPU-verified on this driver.**
 - [ ] AIR intrinsics: simdgroup matrices, MetalPerformancePrimitives
-- [ ] Textures/atomics-CAS under the new driver: opaque-struct texture handles
-      (`%struct._texture_2d_t`) + CAS struct-pointer flattening (in progress)
 - [ ] A CUDA/NVPTX backend
 
 ## Layout
