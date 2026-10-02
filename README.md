@@ -218,7 +218,14 @@ item — see below.
       `expected` slot); bitcasts mixed-type GEP chains (`grid3d`); drops unused
       `air.*`/`llvm.lifetime` declarations; and types vertex/fragment metadata
       function pointers. **All 20 examples GPU-verified on this driver.**
-- [ ] AIR intrinsics: simdgroup matrices, MetalPerformancePrimitives
+- [x] **SIMD-group matrices** (fourth package) — the cooperative 8×8
+      matrix-multiply primitive (`SIMDGroupMatrix.load`/`filled`/
+      `multiplyAccumulate`/`store`) over `air.simdgroup_matrix_8x8_*`. Needed real
+      compiler work: a `coerceValue` address-space fix, and an indirect→by-value
+      rewrite (Swift passes `SIMD64<Float>` indirectly; the driver wants by-value
+      `<64 x float>`, kept in registers). `examples/sgemm`, GPU-verified
+      (C = A·B). See `docs/simdgroup-matrix.md`.
+- [ ] AIR intrinsics: MetalPerformancePrimitives
 - [ ] A CUDA/NVPTX backend
 
 ## Layout

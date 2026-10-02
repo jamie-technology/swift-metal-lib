@@ -153,6 +153,20 @@ drivers accepted a plain opaque device-buffer kernel), all in
 With these, **all 20 examples are GPU-verified on the current driver** (the
 driver change had otherwise reduced the opaque-pointer suite to ~1 passing).
 
+SIMD-group matrices (`examples/sgemm`, `packages/SIMDGroupMatrix`) — the one
+intrinsic family that needed real compiler support, because Swift passes a
+256-byte `SIMD64<Float>` indirectly (`sret` + `dereferenceable(256)` pointers)
+while the `air.simdgroup_matrix_8x8_*` intrinsics take/return it by value
+(`<64 x float>`):
+
+| File | Change |
+| --- | --- |
+| `lib/IRGen/GenCall.cpp` | `coerceValue` uses `CreatePointerBitCastOrAddrSpaceCast` instead of `CreateBitCast` — passing a `@Device` (addrspace 1) pointer into the intrinsics coerced across address spaces and asserted |
+| `lib/IRGen/IRGen.cpp` | `rewriteSimdgroupMatrixIntrinsics` (run first in the normalizer): rewrites each `air.simdgroup_matrix_*` call + declaration from the indirect form to by-value `<64 x float>`, forwarding matrix values as pure SSA (never an alloca — a 2048-bit thread-memory slot is rejected), and marks the kernel `convergent` + `min-legal-vector-width=2048`. Also extends the dead-declaration strip to unused `llvm.mem{cpy,set,move}` |
+| `lib/FrontendTool/FrontendTool.cpp` | a `.p1f32`/`.p1f16`/… intrinsic suffix types that intrinsic's addrspace(1) pointer operand's element (the matrix load/store device pointer → `float addrspace(1)*`) |
+
+All **21 examples** (the 20 above + `sgemm`) are GPU-verified.
+
 Adding a decl attribute is exhaustive-visitor-heavy: `TypeCheckAttr.cpp`,
 `TypeCheckDeclOverride.cpp`, and `ASTDumper.cpp` each delete the default
 `visitDeclAttribute`, so every new attr needs an entry in all three.

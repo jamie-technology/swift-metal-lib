@@ -69,5 +69,7 @@ let package = Package(
                           path: "examples/simdreduce/Host"),
         .executableTarget(name: "triangle-example", dependencies: ["MetalSwift"],
                           path: "examples/triangle/Host"),
+        .executableTarget(name: "sgemm-example", dependencies: ["MetalSwift"],
+                          path: "examples/sgemm/Host"),
     ]
 )
